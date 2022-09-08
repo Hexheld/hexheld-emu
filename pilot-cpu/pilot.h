@@ -7,8 +7,10 @@
 
 typedef enum {
 	MCTL_READY = 0,
-	MCTL_MEM_BUSY,
-	MCTL_IO_BUSY,
+	MCTL_MEM_R_BUSY,
+	MCTL_IO_R_BUSY,
+	MCTL_MEM_W_BUSY,
+	MCTL_IO_W_BUSY,
 	MCTL_DATA_LATCHED
 } Pilot_memctl_state;
 

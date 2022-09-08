@@ -42,15 +42,42 @@ mem_read (Pilot_system *sys)
 	return 1;
 }
 
+/*
+ * Memory accesses through the memory controller need to be carried out as such:
+ * 
+ * Reads:
+ * Tick 0: Pilot_mem_addr_read_assert - assert the address to be accessed
+ * Tick 1: Pilot_mem_data_wait - wait for the access slot to be conceded
+ * Tick 1+n, n >= 0: Pilot_mem_read - read data latch
+ * 
+ * Writes:
+ * Tick 0: Pilot_mem_addr_write_assert
+ * 
+ */
 Pilot_memctl_state
-Pilot_mem_addr_assert (Pilot_system *sys, uint8_t bank, uint16_t addr)
+Pilot_mem_addr_read_assert (Pilot_system *sys, uint8_t bank, uint16_t addr)
 {
 	if (sys->memctl.state == MCTL_READY)
 	{
 		uint32_t actual_address = ((uint32_t)bank << 16) + addr;
 		
 		sys->memctl.addr_reg = actual_address;
-		sys->memctl.state = MCTL_MEM_BUSY;
+		sys->memctl.state = MCTL_MEM_R_BUSY;
+		return MCTL_READY;
+	}
+
+	return sys->memctl.state;
+}
+
+Pilot_memctl_state
+Pilot_mem_addr_write_assert (Pilot_system *sys, uint8_t bank, uint16_t addr, uint16_t data)
+{
+	if (sys->memctl.state == MCTL_READY)
+	{
+		uint32_t actual_address = ((uint32_t)bank << 16) + addr;
+		
+		sys->memctl.addr_reg = actual_address;
+		sys->memctl.state = MCTL_MEM_W_BUSY;
 		return MCTL_READY;
 	}
 
@@ -73,13 +100,13 @@ Pilot_memctl_tick (Pilot_system *sys)
 {
 	switch (sys->memctl.state)
 	{
-		case MCTL_MEM_BUSY:
+		case MCTL_MEM_R_BUSY:
 			if (mem_read(sys) == 0)
 			{
 				sys->memctl.state = MCTL_DATA_LATCHED;
 			}
 			break;
-		case MCTL_IO_BUSY:
+		case MCTL_IO_R_BUSY:
 			if (io_read(sys) == 0)
 			{
 				sys->memctl.state = MCTL_DATA_LATCHED;

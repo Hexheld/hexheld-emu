@@ -23,6 +23,9 @@ typedef struct {
 	struct pilot_regs_main_ main;
 	struct pilot_regs_main_ shadow;
 	
+	// For each register, select which copy of it is visible (main or shadow)
+	uint16_t shadow_ctl;
+	
 	// Stack pointer; bit 0 is always zero
 	uint16_t sp;
 	
