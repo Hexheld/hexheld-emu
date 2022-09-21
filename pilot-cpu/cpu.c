@@ -101,6 +101,8 @@ static enum {
  */
 
 typedef int_fast8_t bool;
+#define TRUE 1
+#define FALSE 0
 
 typedef enum
 {
@@ -152,7 +154,12 @@ typedef union
 	reg8_spec reg8;
 	reg16_spec reg16;
 } reg_spec;
-	
+
+typedef uint_fast8_t rm_spec;
+
+#define RM_NULL -1
+
+typedef int mucode_entry_spec;
 
 typedef struct
 {
@@ -185,13 +192,14 @@ typedef enum
 	DATA_REG__E,
 	DATA_LATCH_MEM_ADDR,
 	DATA_LATCH_MEM_DATA,
+	DATA_LATCH_IMM_0,
 	DATA_LATCH_IMM_1,
 	DATA_LATCH_IMM_2
 } data_bus_specifier;
 
 struct alu_src_control {
 	data_bus_specifier location;
-	bool swap8;
+	bool is_16bit;
 	bool sign_extend;
 };
 
@@ -240,8 +248,10 @@ struct inst_decoded_flags
 	// Immediate data sources
 	uint_fast16_t imm_words[3];
 	
-	// Core operation word
+	// Sequencer control
+	mucode_entry_spec run_before;
 	execute_control_word core_op;
+	mucode_entry_spec run_after;
 	
 	// Branch flags
 	bool branch;
@@ -257,8 +267,8 @@ struct inst_decoded_flags
 		COND_NZ,         // not equal; nonzero
 		COND_S,          // positive; sign set
 		COND_NS,         // negative; sign clear
-		COND_V,          // overflow; parity error
-		COND_NV,         // not overflow; parity ok
+		COND_V,          // overflow; parity even
+		COND_NV,         // not overflow; parity odd
 		COND_C,          // carry set; unsigned less than
 		COND_NC,         // carry clear; unsigned greater than or equal
 		COND_ALWAYS,     // always
@@ -288,15 +298,28 @@ typedef struct {
 
 struct pilot_execute_state {
 	struct inst_decoded_flags decoded_inst;
-	execute_control_word control;
+	execute_control_word *control;
 };
 
-static void decode_read_word_ (pilot_decode_state state);
+// Reads one word from the fetch unit
+static void decode_read_word_ (pilot_decode_state *state);
 
-static void decode_invalid_opcode_ (pilot_decode_state state);
+// Runs the invalid opcode exception reporting.
+static void decode_invalid_opcode_ (pilot_decode_state *state);
+
+// Asserts if an RM specifier is valid.
+// NOTE: Special RM specifiers for certain instructions are not checked here and need to be special-case evaluated beforehand.
+static bool is_rm_valid_ (rm_spec rm);
+
+// Decodes an RM specifier:
+// - Reads additional immediate value if needed
+// - Sets alu_src_control fields for core_op
+static void decode_rm_specifier (pilot_decode_state *state, rm8_spec rm, bool is_dest, bool is_16bit);
+
+static void decode_unreachable_ ();
 
 static inline void
-decode_inst_branch_ (pilot_decode_state state, uint_fast16_t opcode)
+decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
 {
 	if ((opcode & 0xff00) == 0xff00)
 	{
@@ -359,16 +382,103 @@ decode_inst_branch_ (pilot_decode_state state, uint_fast16_t opcode)
 }
 
 static inline void
-decode_inst_arithlogic_ (pilot_decode_state state, uint_fast16_t opcode)
+decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 {
+	uint_fast8_t operation = (opcode & 0x7000) >> 12;
+	bool reg_16bit = (opcode & 0x0400) != 0;
+	execute_control_word *core_op = &state->work_regs.core_op;
+	data_bus_specifier reg_select;
+	
+	// Decode reg_select bit
+	if (reg_16bit)
+	{
+		reg_select = !(opcode & 0x0100) ? DATA_REG_AB : DATA_REG_HL;
+	}
+	else
+	{
+		reg_select = !(opcode & 0x0100) ? DATA_REG__A : DATA_REG__B;
+	}
+	
+	// Decode core_op operation
+	switch (operation)
+	{
+		case 0: case 1: case 2: case 3: case 7:
+			// ADD, ADC, SUB, SBC
+			core_op->operation = ALU_ADD;
+			break;
+		case 4:
+			// AND
+			core_op->operation = ALU_AND;
+			break;
+		case 5:
+			// XOR
+			core_op->operation = ALU_XOR;
+			break;
+		case 6:
+			// OR
+			core_op->operation = ALU_OR;
+			break;
+		default:
+			decode_unreachable_();
+	}
+	
+	// Decode core_op flags
+	switch (operation)
+	{
+		case 0: case 1: case 2: case 3:
+			// ADD, ADC, SUB, SBC
+			core_op->src2_add_carry = operation & 1;
+			core_op->src2_negate = operation & 2;
+			core_op->flag_write_mask = F_NEG | F_ZERO | F_HCARRY | F_OVRFLW | F_CARRY;
+			core_op->flag_v_parity = FALSE;
+			break;
+		
+		case 4: case 5: case 6:
+			// AND, XOR, OR
+			core_op->src2_add_carry = FALSE;
+			core_op->src2_negate = FALSE;
+			core_op->flag_write_mask = F_NEG | F_ZERO | F_OVRFLW;
+			core_op->flag_v_parity = TRUE;
+			break;
+		case 7:
+			// CP
+			core_op->src2_add_carry = FALSE;
+			core_op->src2_negate = TRUE;
+			core_op->flag_write_mask = F_NEG | F_ZERO | F_HCARRY | F_OVRFLW | F_CARRY;
+			core_op->flag_v_parity = FALSE;
+			break;
+		default:
+			decode_unreachable_();
+	}
+	
+	// Decode operands
 	if ((opcode & 0x02c0) == 0x0200)
 	{
 		// from src or to dest
+		bool rm_is_dest = (opcode & 0x0020) != 0;
+		rm_spec rm = opcode & 0x001F;
+		decode_rm_specifier(state, rm, rm_is_dest, reg_16bit);
+
+		state->work_regs.core_op.srcs[!rm_is_dest].location = reg_select;
+		state->work_regs.core_op.srcs[!rm_is_dest].is_16bit = reg_16bit;
+		state->work_regs.core_op.srcs[!rm_is_dest].sign_extend = FALSE;
 		return;
 	}
 	if ((opcode & 0x0200) == 0x0000)
 	{
 		// from immediate
+		state->work_regs.core_op.srcs[0].location = reg_select;
+		state->work_regs.core_op.srcs[0].is_16bit = reg_16bit;
+		state->work_regs.core_op.srcs[0].sign_extend = FALSE;
+
+		state->work_regs.core_op.srcs[1].location = DATA_LATCH_IMM_0;
+		state->work_regs.core_op.srcs[1].is_16bit = FALSE;
+		state->work_regs.core_op.srcs[1].sign_extend = reg_16bit && (operation & 4);
+		
+		if (operation != 7)
+		{
+			state->work_regs.core_op.dest = reg_select;
+		}
 		return;
 	}
 	
@@ -376,10 +486,10 @@ decode_inst_arithlogic_ (pilot_decode_state state, uint_fast16_t opcode)
 }
 
 static void
-decode_inst_ (pilot_decode_state state)
+decode_inst_ (pilot_decode_state *state)
 {
 	decode_read_word_(state);
-	uint_fast16_t opcode = state.work_regs.imm_words[0];
+	uint_fast16_t opcode = state->work_regs.imm_words[0];
 	
 	if (opcode & 0x0800)
 	{
