@@ -76,7 +76,7 @@ ind_1cyc_reg_auto_ (mucode_entry_spec spec)
 	
 	prg.operation.srcs[1].location = DATA_ZERO;
 	prg.operation.src2_add1 = TRUE;
-	prg.operation.src2_negate = (spec.reg_select & 2);
+	prg.operation.src2_negate = (spec.reg_select & 8);
 	
 	prg.operation.operation = ALU_ADD;
 	prg.operation.shifter_mode = spec.is_16bit ? SHIFTER_LEFT : SHIFTER_NONE;
@@ -159,11 +159,11 @@ after_ds_autoidx_ (mucode_entry_spec spec)
 	prg.next = (mucode_entry_spec){MU_NONE, 0, FALSE, FALSE};
 	prg.operation.srcs[0].is_16bit = TRUE;
 	prg.operation.srcs[0].sign_extend = FALSE;
-	prg.operation.srcs[0].location = ((spec.reg_select & 1) == 0) ? DATA_REG_HL : DATA_REG_IX;
+	prg.operation.srcs[0].location = (spec.reg_select & 1) ? DATA_REG_HL : DATA_REG_IX;
 	
 	prg.operation.srcs[1].location = DATA_ZERO;
 	prg.operation.src2_add1 = TRUE;
-	prg.operation.src2_negate = (spec.reg_select & 2);
+	prg.operation.src2_negate = (spec.reg_select & 8);
 	
 	prg.operation.operation = ALU_ADD;
 	prg.operation.shifter_mode = spec.is_16bit ? SHIFTER_LEFT : SHIFTER_NONE;

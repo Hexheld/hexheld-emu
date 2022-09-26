@@ -11,44 +11,6 @@ static data_bus_specifier imm_word_index[] =
 };
 
 static bool
-rm_imm(pilot_decode_state *state, bool is_dest)
-{
-	decode_read_word_(state);
-	execute_control_word *core_op = &state->work_regs.core_op;
-	
-	if (is_dest)
-	{
-		core_op->dest = imm_word_index[state->inst_length];
-	}
-	else
-	{
-		core_op->srcs[1].location = imm_word_index[state->inst_length];
-	}
-	
-	return TRUE;
-}
-
-static bool
-rm_ind_hl_i(pilot_decode_state *state, bool is_dest)
-{
-	decode_read_word_(state);
-	execute_control_word *core_op = &state->work_regs.core_op;
-	
-	if (is_dest)
-	{
-		core_op->dest = imm_word_index[state->inst_length];
-	}
-	else
-	{
-		core_op->srcs[1].location = imm_word_index[state->inst_length];
-	}
-	
-	return TRUE;
-}
-
-
-
-static bool
 rm_invalid(pilot_decode_state *state, bool is_dest)
 {
 	(void) state;
@@ -111,6 +73,14 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool i
 		src_affected = &state->work_regs.core_op.srcs[1];
 	}
 	src_affected->is_16bit = is_16bit;
+	if (rm_requires_mem_fetch_(rm))
+	{
+		src_affected->location = DATA_LATCH_MEM_DATA;
+		if (is_dest)
+		{
+			core_op->dest = src_affected->location;
+		}
+	}
 	switch (rm & 0x03)
 	{
 		case 0:
@@ -134,22 +104,27 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool i
 					// 00/01:[imm]
 					run_mucode->entry_idx = MU_IND_IMM;
 					run_mucode->reg_select = (state->inst_length > 2);
+					// if rm == 8 - bank 01
 					run_mucode->bank_select = (rm == 8);
 					break;
 				case 12:
 					// DS:[imm]
 					run_mucode->entry_idx = MU_IND_WITH_DS;
+					// select imm1 or imm2 based on current inst length
 					run_mucode->reg_select = 4 + (state->inst_length > 2);
 					break;
 				case 16: case 24:
 					// [IX/SP+imm]
 					run_mucode->entry_idx = MU_IND_REG_WITH_IMM;
+					// select SP if rm == 24
+					// select imm1 or imm2 based on current inst length
 					run_mucode->reg_select = (rm == 24) | (state->inst_length > 2) << 1;
 					run_mucode->bank_select = 0;
 					break;
 				case 20:
 					// DS:[IX+imm]
 					run_mucode->entry_idx = MU_IND_DS_IX_IMM;
+					// select imm1 or imm2 based on current inst length
 					run_mucode->reg_select = (state->inst_length > 2) << 1;
 					break;
 				default:
@@ -158,21 +133,44 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool i
 			// Falls through if rm & 0x1c is not 0 or 28
 			run_mucode->is_16bit = is_16bit;
 			run_mucode->is_write = is_dest;
-			src_affected->location = DATA_LATCH_MEM_DATA;
-			if (is_dest)
-			{
-				core_op->dest = src_affected->location;
-			}
 			return TRUE;
 		case 1:
 			// HL/IX auto-index indirect
+			run_mucode->reg_select = (2 - !(rm & 16)) | (rm & 8);
+			if (rm & 4)
+			{
+				run_mucode->entry_idx = MU_IND_WITH_DS_AUTO;
+			}
+			else
+			{
+				run_mucode->entry_idx = MU_IND_REG_AUTO;
+				run_mucode->bank_select = 0;
+			}
+			return TRUE;
 		case 2:
 			// AB/HL/IX/DS indirect
+			if (rm == 30)
+			{
+				// invalid
+				return FALSE;
+			}
+			run_mucode->reg_select = rm >> 3;
+			if (rm & 4)
+			{
+				run_mucode->entry_idx = MU_IND_WITH_DS;
+			}
+			else
+			{
+				run_mucode->entry_idx = MU_IND_REG;
+				run_mucode->bank_select = 0;
+			}
+			return TRUE;
 		case 3:
 			// register direct
 			if (is_16bit)
 			{
 				src_affected->location = rm_register_mapping_16bit[rm >> 2];
+				// enable sign extend for ASX and BSX
 				src_affected->sign_extend = (rm & 0x1c) == 4 || (rm & 0x1c) == 12;
 			}
 			else

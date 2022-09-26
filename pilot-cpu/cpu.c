@@ -264,6 +264,60 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 }
 
 static void
+decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
+{
+	execute_control_word *core_op = &state->work_regs.core_op;
+	bool is_16bit = (opcode & 0x0400) != 0;
+	core_op->src2_add_carry = FALSE;
+	core_op->src2_negate = FALSE;
+	core_op->flag_write_mask = 0;
+	core_op->flag_v_parity = FALSE;
+
+	if ((opcode & 0x7800) == 0x5000)
+	{
+		// zm specifiers
+	}
+	if ((opcode & 0x7800) == 0x6000)
+	{
+		// rm src/dest
+		rm_spec rm_src = opcode & 0x1f;
+		rm_spec rm_dest = (opcode >> 5) & 0x1f;
+		decode_rm_specifier(state, rm_src, FALSE, is_16bit);
+		decode_rm_specifier(state, rm_dest, TRUE, is_16bit);
+	}
+	if ((opcode & 0x7800) == 0x7000)
+	{
+		// reg <- imm8
+		switch ((opcode >> 8) & 7)
+		{
+			case 0:
+				core_op->dest = DATA_REG__A;
+			case 1:
+				core_op->dest = DATA_REG__H;
+			case 2:
+				core_op->dest = DATA_REG__I;
+			case 3:
+				core_op->dest = DATA_REG__D;
+			case 4:
+				core_op->dest = DATA_REG__B;
+			case 5:
+				core_op->dest = DATA_REG__L;
+			case 6:
+				core_op->dest = DATA_REG__X;
+			case 7:
+				core_op->dest = DATA_REG__S;
+		}
+		state->work_regs.core_op.srcs[0].location = DATA_LATCH_IMM_0;
+		state->work_regs.core_op.srcs[0].is_16bit = FALSE;
+		state->work_regs.core_op.srcs[0].sign_extend = FALSE;
+
+		state->work_regs.core_op.srcs[1].location = DATA_ZERO;
+	}
+	
+	decode_invalid_opcode_(state);
+}
+
+static void
 decode_inst_ (pilot_decode_state *state)
 {
 	decode_read_word_(state);
@@ -278,6 +332,14 @@ decode_inst_ (pilot_decode_state *state)
 	{
 		// Arithmetic/logic operations
 		decode_inst_arithlogic_(state, opcode);
+	}
+	else if ((opcode & 0x7000) > 0x4000)
+	{
+		decode_inst_ld_group_(state, opcode);
+	}
+	else if ((opcode & 0x4200) == 0x4200)
+	{
+		decode_inst_stack_(state, opcode);
 	}
 }
 
