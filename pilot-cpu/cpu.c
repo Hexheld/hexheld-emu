@@ -1,25 +1,7 @@
 #include "cpu_regs.h"
+#include "cpu_decode.h"
 #include "memory.h"
 #include <stdint.h>
-
-static enum {
-	// Carry/borrow flag
-	F_CARRY   = 0x01,
-	// When set, operations with DS ignore S, freeing it for general-purpose use
-	F_DS_MODE = 0x02,
-	// Overflow/parity flag
-	F_OVRFLW  = 0x04,
-	// Segment adjust flag
-	F_DS_ADJ  = 0x08,
-	// Half carry flag
-	F_HCARRY  = 0x10,
-	// Interrupt enable
-	F_INT_EN  = 0x20,
-	// Zero flag
-	F_ZERO    = 0x40,
-	// Sign (negative) flag
-	F_NEG     = 0x80
-} flag_masks;
 
 /*
  * Pipeline stages:
@@ -100,223 +82,19 @@ static enum {
  * 
  */
 
-typedef int_fast8_t bool;
-#define TRUE 1
-#define FALSE 0
-
-typedef enum
-{
-	REG8_A = 0,
-	REG8_B,
-	REG8_H,
-	REG8_L,
-	REG8_I,
-	REG8_X,
-	REG8_D,
-	REG8_S,
-	
-	REG8_C,
-	REG8_F,
-	REG8_E
-} reg8_spec;
-
-typedef enum
-{
-	REG16_AB = 0,
-	REG16_A_SX,
-	REG16_HL,
-	REG16_B_SX,
-	REG16_IX,
-	REG16_A_ZX,
-	REG16_DS,
-	REG16_SP
-} reg16_spec;
-
-typedef enum
-{
-	DATA_REG,
-	DATA_IND_IMM16,
-	DATA_IND_IMM24,
-	DATA_IND_REG16,
-	DATA_IND_IX_IMM16,
-	DATA_IND_SP_IMM16,
-} data_location_spec;
-
-typedef enum
-{
-	IND_ZEROPAGE = 0,
-	IND_DS,
-	IND_ONEPAGE
-} indirect_type_spec;
-
-typedef union
-{
-	reg8_spec reg8;
-	reg16_spec reg16;
-} reg_spec;
-
-typedef uint_fast8_t rm_spec;
-
-#define RM_NULL -1
-
-typedef int mucode_entry_spec;
-
-typedef struct
-{
-	data_location_spec location;
-	indirect_type_spec ind_type;
-	reg_spec reg;
-} argument_spec;
-
-typedef enum
-{
-	DATA_ZERO = 0,
-	DATA_REG__A,
-	DATA_REG__B,
-	DATA_REG__H,
-	DATA_REG__L,
-	DATA_REG__I,
-	DATA_REG__X,
-	DATA_REG__D,
-	DATA_REG__S,
-	DATA_REG_AB,
-	DATA_REG_HL,
-	DATA_REG_IX,
-	DATA_REG_DS,
-	DATA_REG__C,
-	DATA_REG_SP,
-	DATA_REG_PC,
-	DATA_REG__K,
-	DATA_REG__F,
-	DATA_REG_KF,
-	DATA_REG__E,
-	DATA_LATCH_MEM_ADDR,
-	DATA_LATCH_MEM_DATA,
-	DATA_LATCH_IMM_0,
-	DATA_LATCH_IMM_1,
-	DATA_LATCH_IMM_2
-} data_bus_specifier;
-
-struct alu_src_control {
-	data_bus_specifier location;
-	bool is_16bit;
-	bool sign_extend;
-};
-
-typedef struct
-{
-	struct alu_src_control srcs[2];
-	data_bus_specifier dest;
-
-	enum
-	{
-		ALU_ADD,
-		ALU_AND,
-		ALU_OR,
-		ALU_XOR
-	} operation;
-	
-	// Shifter control
-	enum
-	{
-		SHIFTER_NONE,
-		SHIFTER_LEFT,
-		SHIFTER_LEFT_BARREL,
-		SHIFTER_RIGHT_LOGICAL,
-		SHIFTER_RIGHT_ARITH,
-		SHIFTER_RIGHT_BARREL
-	} shifter_mode;
-	
-	// Source transformations
-	bool src2_negate;
-	bool src2_add1;
-	bool src2_add_carry;
-	
-	// Flag control
-	uint_fast8_t flag_write_mask;
-	bool flag_v_parity;
-	
-	// Register swap control
-	
-	// Memory control
-	bool mem_latch_addr;
-	bool mem_write;
-} execute_control_word;
-
-struct inst_decoded_flags
-{
-	// Immediate data sources
-	uint_fast16_t imm_words[3];
-	
-	// Sequencer control
-	mucode_entry_spec run_before;
-	execute_control_word core_op;
-	mucode_entry_spec run_after;
-	
-	// Branch flags
-	bool branch;
-	enum
-	{
-		COND_LT,         // less than
-		COND_GE,         // greater than or equal
-		COND_LE,         // less than or equal
-		COND_GT,         // greater than
-		COND_U_LE,       // unsigned less than or equal
-		COND_U_GT,       // unsigned greater than
-		COND_Z,          // equal; zero
-		COND_NZ,         // not equal; nonzero
-		COND_S,          // positive; sign set
-		COND_NS,         // negative; sign clear
-		COND_V,          // overflow; parity even
-		COND_NV,         // not overflow; parity odd
-		COND_C,          // carry set; unsigned less than
-		COND_NC,         // carry clear; unsigned greater than or equal
-		COND_ALWAYS,     // always
-		COND_ALWAYS_CALL // always, but used for calls
-	} branch_cond;
-	enum
-	{
-		BR_RELATIVE,
-		BR_LOCAL,
-		BR_D,
-		BR_FAR,
-		BR_RET,
-		BR_RET_FAR
-	} branch_dest_type;
-};
-
-typedef struct {
-	struct inst_decoded_flags work_regs;
-	enum
-	{
-		DECODER_READY,
-		DECODER_READ_INST_WORD,
-		DECODER_READ_2_EXTRA_WORDS,
-		DECODER_READ_EXTRA_WORD
-	} decoding_cycle;
-} pilot_decode_state;
-
 struct pilot_execute_state {
 	struct inst_decoded_flags decoded_inst;
 	execute_control_word *control;
 };
-
-// Reads one word from the fetch unit
-static void decode_read_word_ (pilot_decode_state *state);
 
 // Runs the invalid opcode exception reporting.
 static void decode_invalid_opcode_ (pilot_decode_state *state);
 
 // Asserts if an RM specifier is valid.
 // NOTE: Special RM specifiers for certain instructions are not checked here and need to be special-case evaluated beforehand.
-static bool is_rm_valid_ (rm_spec rm);
+static inline bool is_rm_valid_ (rm_spec rm);
 
-// Decodes an RM specifier:
-// - Reads additional immediate value if needed
-// - Sets alu_src_control fields for core_op
-static void decode_rm_specifier (pilot_decode_state *state, rm8_spec rm, bool is_dest, bool is_16bit);
-
-static void decode_unreachable_ ();
+void decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool is_16bit);
 
 static inline void
 decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
