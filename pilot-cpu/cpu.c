@@ -94,7 +94,7 @@ static void decode_invalid_opcode_ (pilot_decode_state *state);
 // NOTE: Special RM specifiers for certain instructions are not checked here and need to be special-case evaluated beforehand.
 static inline bool is_rm_valid_ (rm_spec rm);
 
-void decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool is_16bit);
+void decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool src_is_left, bool is_16bit);
 
 static inline void
 decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
@@ -167,6 +167,9 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 	execute_control_word *core_op = &state->work_regs.core_op;
 	data_bus_specifier reg_select;
 	
+	core_op->shifter_mode = SHIFTER_NONE;
+	core_op->src2_add1 = FALSE;
+	
 	// Decode reg_select bit
 	if (reg_16bit)
 	{
@@ -235,7 +238,7 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 		// from src or to dest
 		bool rm_is_dest = (opcode & 0x0020) != 0;
 		rm_spec rm = opcode & 0x001F;
-		decode_rm_specifier(state, rm, rm_is_dest, reg_16bit);
+		decode_rm_specifier(state, rm, rm_is_dest, rm_is_dest, reg_16bit);
 
 		state->work_regs.core_op.srcs[!rm_is_dest].location = reg_select;
 		state->work_regs.core_op.srcs[!rm_is_dest].is_16bit = reg_16bit;
@@ -268,10 +271,16 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 {
 	execute_control_word *core_op = &state->work_regs.core_op;
 	bool is_16bit = (opcode & 0x0400) != 0;
+	core_op->src2_add1 = FALSE;
 	core_op->src2_add_carry = FALSE;
 	core_op->src2_negate = FALSE;
 	core_op->flag_write_mask = 0;
 	core_op->flag_v_parity = FALSE;
+
+	// left operand is never fetched and is always zero
+	core_op->srcs[0].location = DATA_ZERO;
+	core_op->operation = ALU_OR;
+	core_op->shifter_mode = SHIFTER_NONE;
 
 	if ((opcode & 0x7800) == 0x5000)
 	{
@@ -282,8 +291,12 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 		// rm src/dest
 		rm_spec rm_src = opcode & 0x1f;
 		rm_spec rm_dest = (opcode >> 5) & 0x1f;
-		decode_rm_specifier(state, rm_src, FALSE, is_16bit);
-		decode_rm_specifier(state, rm_dest, TRUE, is_16bit);
+		// fetch src (right operand)
+		decode_rm_specifier(state, rm_src, FALSE, FALSE, is_16bit);
+		// write into dest (left operand)
+		// does not need to be fetched, hence it's not a source, so don't set src_is_left
+		decode_rm_specifier(state, rm_dest, TRUE, FALSE, is_16bit);
+		
 	}
 	if ((opcode & 0x7800) == 0x7000)
 	{
@@ -307,11 +320,9 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 			case 7:
 				core_op->dest = DATA_REG__S;
 		}
-		state->work_regs.core_op.srcs[0].location = DATA_LATCH_IMM_0;
-		state->work_regs.core_op.srcs[0].is_16bit = FALSE;
-		state->work_regs.core_op.srcs[0].sign_extend = FALSE;
-
-		state->work_regs.core_op.srcs[1].location = DATA_ZERO;
+		core_op->srcs[1].location = DATA_LATCH_IMM_0;
+		core_op->srcs[1].is_16bit = FALSE;
+		core_op->srcs[1].sign_extend = FALSE;
 	}
 	
 	decode_invalid_opcode_(state);

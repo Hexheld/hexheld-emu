@@ -57,28 +57,53 @@ rm_requires_mem_fetch_ (rm_spec rm)
 // - Reads additional immediate value if needed
 // - Sets alu_src_control fields for core_op
 bool
-decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool is_16bit)
+decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool src_is_left, bool is_16bit)
 {
 	execute_control_word *core_op = &state->work_regs.core_op;
 	mucode_entry_spec *run_mucode;
 	struct alu_src_control *src_affected;
-	if (!is_dest)
+	if (src_is_left)
 	{
-		run_mucode = &state->work_regs.run_before;
 		src_affected = &state->work_regs.core_op.srcs[0];
+	}
+	else if (!is_dest)
+	{
+		src_affected = &state->work_regs.core_op.srcs[1];
 	}
 	else
 	{
-		run_mucode = &state->work_regs.run_after;
-		src_affected = &state->work_regs.core_op.srcs[1];
+		src_affected = 0;
 	}
-	src_affected->is_16bit = is_16bit;
+
+	if (src_affected)
+	{
+		src_affected->is_16bit = is_16bit;
+	}
 	if (rm_requires_mem_fetch_(rm))
 	{
-		src_affected->location = DATA_LATCH_MEM_DATA;
-		if (is_dest)
+		if (src_affected)
 		{
-			core_op->dest = src_affected->location;
+			src_affected->location = DATA_LATCH_MEM_DATA;
+		}
+		if (is_dest && src_is_left)
+		{
+			// left source and destination are the same
+			// fetch and set up writeback
+			run_mucode = &state->work_regs.run_before;
+			core_op->dest = DATA_LATCH_MEM_DATA;
+			core_op->mem_latch_ctl = MEM_LATCH_HALF2_MAR;
+			core_op->mem_write_ctl = MEM_WRITE_FROM_DEST;
+			core_op->mem_16bit = is_16bit;
+		}
+		else if (is_dest)
+		{
+			// destination only, not part of core op; no fetch
+			run_mucode = &state->work_regs.run_after;
+		}
+		else
+		{
+			// source only, fetch
+			run_mucode = &state->work_regs.run_before;
 		}
 	}
 	switch (rm & 0x03)
@@ -86,7 +111,10 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool i
 		case 0:
 			// uses imm word
 			decode_read_word_(state);
-			src_affected->sign_extend = FALSE;
+			if (src_affected)
+			{
+				src_affected->sign_extend = FALSE;
+			}
 			switch (rm & 0x1c)
 			{
 				case 0:
@@ -167,16 +195,19 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool i
 			return TRUE;
 		case 3:
 			// register direct
-			if (is_16bit)
+			if (src_affected)
 			{
-				src_affected->location = rm_register_mapping_16bit[rm >> 2];
-				// enable sign extend for ASX and BSX
-				src_affected->sign_extend = (rm & 0x1c) == 4 || (rm & 0x1c) == 12;
-			}
-			else
-			{
-				src_affected->location = rm_register_mapping_8bit[rm >> 2];
-				src_affected->sign_extend = FALSE;
+				if (is_16bit)
+				{
+					src_affected->location = rm_register_mapping_16bit[rm >> 2];
+					// enable sign extend for ASX and BSX
+					src_affected->sign_extend = (rm & 0x1c) == 4 || (rm & 0x1c) == 12;
+				}
+				else
+				{
+					src_affected->location = rm_register_mapping_8bit[rm >> 2];
+					src_affected->sign_extend = FALSE;
+				}
 			}
 
 			if (is_dest)
