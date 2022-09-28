@@ -221,3 +221,55 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool s
 	decode_unreachable_();
 	return FALSE;
 } 
+
+bool
+decode_zm_specifier (pilot_decode_state *state, zm_spec zm, bool is_dest, bool is_16bit)
+{
+	mucode_entry_spec *mucode = &state->work_regs.override_op;
+	mucode->is_16bit = is_16bit;
+	mucode->is_write = is_dest;
+	
+
+	if (zm & 0x80)
+	{
+		state->work_regs.imm_words[0] = zm & 0x1f;
+	}
+	else
+	{
+		state->work_regs.imm_words[0] = zm & 0x1e;
+	}
+
+	if ((zm & 0xe0) == 0xe0)
+	{
+		mucode->entry_idx = MU_IND_ZN;
+		
+	}
+	else if ((zm & 0xe0) == 0xc0)
+	{
+		mucode->entry_idx = MU_IND_DS_IX_IMM0;
+	}
+	else if ((zm & 0xc0) == 0x80)
+	{
+		mucode->entry_idx = MU_IND_REG_WITH_IMM0;
+		mucode->reg_select |= 2 * ((zm & 0x20) != 0);
+	}
+	else if ((zm & 0xe0) == 0x60)
+	{
+		mucode->entry_idx = !(zm & 0x01) ? MU_IND_ZN_IND : MU_IND_ZN_WITH_DS_IND;
+	}
+	else if ((zm & 0xe0) == 0x40)
+	{
+		mucode->entry_idx = !(zm & 0x01) ? MU_IND_ZN_WITH_IX_IND : MU_IND_ZN_DS_IX_IND;
+	}
+	else if ((zm & 0xc0) == 0x00)
+	{
+		mucode->entry_idx = !(zm & 0x01) ? MU_IND_ZN_AUTO_IND : MU_IND_ZN_DS_AUTO_IND;
+		mucode->reg_select |= 8 * ((zm & 0x20) != 0);
+	}
+	else
+	{
+		return FALSE;
+	}
+	
+	return TRUE;
+}

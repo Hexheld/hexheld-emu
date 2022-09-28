@@ -94,7 +94,9 @@ static void decode_invalid_opcode_ (pilot_decode_state *state);
 // NOTE: Special RM specifiers for certain instructions are not checked here and need to be special-case evaluated beforehand.
 static inline bool is_rm_valid_ (rm_spec rm);
 
-void decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool src_is_left, bool is_16bit);
+bool decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool src_is_left, bool is_16bit);
+
+bool decode_zm_specifier (pilot_decode_state *state, zm_spec zm, bool is_dest, bool is_16bit);
 
 static inline void
 decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
@@ -284,7 +286,11 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 
 	if ((opcode & 0x7800) == 0x5000)
 	{
-		// zm specifiers
+		// zm specifiers; microcode-only instruction
+		uint8_t zm_spec = opcode & 0xff;
+		decode_zm_specifier(state, zm_spec, !(opcode & 0x0200), (opcode & 0x0400) != 0);
+		state->work_regs.override_op.reg_select |= (opcode & 0x0100) != 0;
+		return;
 	}
 	if ((opcode & 0x7800) == 0x6000)
 	{
@@ -296,7 +302,7 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 		// write into dest (left operand)
 		// does not need to be fetched, hence it's not a source, so don't set src_is_left
 		decode_rm_specifier(state, rm_dest, TRUE, FALSE, is_16bit);
-		
+		return;
 	}
 	if ((opcode & 0x7800) == 0x7000)
 	{
@@ -323,6 +329,7 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 		core_op->srcs[1].location = DATA_LATCH_IMM_0;
 		core_op->srcs[1].is_16bit = FALSE;
 		core_op->srcs[1].sign_extend = FALSE;
+		return;
 	}
 	
 	decode_invalid_opcode_(state);

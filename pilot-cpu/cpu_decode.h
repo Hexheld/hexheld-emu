@@ -75,6 +75,7 @@ typedef union
 } reg_spec;
 
 typedef uint_fast8_t rm_spec;
+typedef uint_fast8_t zm_spec;
 
 #define RM_NULL -1
 
@@ -88,6 +89,15 @@ typedef enum
 	MU_IND_WITH_DS,
 	MU_IND_WITH_DS_AUTO,
 	MU_IND_DS_IX_IMM,
+	MU_IND_ZN,
+	MU_IND_REG_WITH_IMM0,
+	MU_IND_DS_IX_IMM0,
+	MU_IND_ZN_IND,
+	MU_IND_ZN_AUTO_IND,
+	MU_IND_ZN_WITH_DS_IND,
+	MU_IND_ZN_DS_AUTO_IND,
+	MU_IND_ZN_WITH_IX_IND,
+	MU_IND_ZN_DS_IX_IND,
 } mucode_entry_idx;
 
 typedef struct
@@ -224,8 +234,13 @@ struct inst_decoded_flags
 	uint_fast16_t imm_words[3];
 	
 	// Sequencer control
+	// override_op: if not MU_NONE, overrides the entire execution with itself
+	mucode_entry_spec override_op;
+	// run_before: if not MU_NONE, is executed before core_op - usually for memory reads
 	mucode_entry_spec run_before;
+	// core_op: single-cycle execution control word assembled by the decode stage
 	execute_control_word core_op;
+	// run_after: if not MU_NONE, is executed after core_op - usually for memory writes
 	mucode_entry_spec run_after;
 	
 	// Branch flags
