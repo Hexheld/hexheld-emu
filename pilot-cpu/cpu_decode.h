@@ -89,15 +89,37 @@ typedef enum
 	MU_IND_WITH_DS,
 	MU_IND_WITH_DS_AUTO,
 	MU_IND_DS_IX_IMM,
-	MU_IND_ZN,
+
+	MU_IND_IMM0,
 	MU_IND_REG_WITH_IMM0,
 	MU_IND_DS_IX_IMM0,
-	MU_IND_ZN_IND,
-	MU_IND_ZN_AUTO_IND,
-	MU_IND_ZN_WITH_DS_IND,
-	MU_IND_ZN_DS_AUTO_IND,
-	MU_IND_ZN_WITH_IX_IND,
-	MU_IND_ZN_DS_IX_IND,
+	
+	MU_LD_ZN_IND,
+	MU_LD_ZN_IND__DEREFER_,
+	MU_LD_ZN_IND__MOV_,
+	
+	MU_LD_ZN_AUTO_IND,
+	MU_LD_ZN_AUTO_IND__AUTO_BUFFER_,
+	MU_LD_ZN_AUTO_IND__DEREFER_,
+	MU_LD_ZN_AUTO_IND__MOV_,
+	MU_LD_ZN_AUTO_IND__AUTO_WRITEBACK_,
+
+	MU_LD_ZN_WITH_DS_IND,
+	MU_LD_ZN_WITH_DS_IND__DEREFER_,
+	MU_LD_ZN_WITH_DS_IND__DS_CALC_,
+	
+	MU_LD_ZN_DS_AUTO_IND,
+	MU_LD_ZN_DS_AUTO_IND__AUTO_BUFFER_,
+	MU_LD_ZN_DS_AUTO_IND__DEREFER_,
+	MU_LD_ZN_DS_AUTO_IND__DS_CALC_,
+	MU_LD_ZN_DS_AUTO_IND__MOV_,
+	MU_LD_ZN_DS_AUTO_IND__AUTO_WRITEBACK_,
+
+	MU_LD_ZN_WITH_IX_IND,
+
+	MU_LD_ZN_DS_IX_IND,
+
+	MU_POST_AUTOIDX,
 } mucode_entry_idx;
 
 typedef struct
@@ -108,13 +130,6 @@ typedef struct
 	bool is_16bit;
 	bool is_write;
 } mucode_entry_spec;
-
-typedef struct
-{
-	data_location_spec location;
-	indirect_type_spec ind_type;
-	reg_spec reg;
-} argument_spec;
 
 typedef enum
 {
@@ -255,8 +270,8 @@ struct inst_decoded_flags
 		COND_U_GT,       // unsigned greater than
 		COND_Z,          // equal; zero
 		COND_NZ,         // not equal; nonzero
-		COND_S,          // positive; sign set
-		COND_NS,         // negative; sign clear
+		COND_S,          // negative; sign set
+		COND_NS,         // positive; sign clear
 		COND_V,          // overflow; parity even
 		COND_NV,         // not overflow; parity odd
 		COND_C,          // carry set; unsigned less than

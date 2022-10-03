@@ -286,9 +286,31 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 
 	if ((opcode & 0x7800) == 0x5000)
 	{
-		// zm specifiers; microcode-only instruction
+		// zm specifiers
 		uint8_t zm_spec = opcode & 0xff;
-		decode_zm_specifier(state, zm_spec, !(opcode & 0x0200), (opcode & 0x0400) != 0);
+		data_bus_specifier reg;
+		bool zm_is_dest = !(opcode & 0x0200);
+		if (is_16bit)
+		{
+			 reg = !(opcode & 0x0100) ? DATA_REG_AB : DATA_REG_HL;
+		}
+		else
+		{
+			 reg = !(opcode & 0x0100) ? DATA_REG__A : DATA_REG__B;
+		}
+		
+		if (zm_is_dest)
+		{
+			core_op->srcs[1].location = reg;
+			core_op->dest = DATA_LATCH_MEM_DATA;
+		}
+		else
+		{
+			core_op->srcs[1].location = DATA_LATCH_MEM_DATA;
+			core_op->dest = reg;
+		}
+		
+		decode_zm_specifier(state, zm_spec, zm_is_dest, is_16bit);
 		state->work_regs.override_op.reg_select |= (opcode & 0x0100) != 0;
 		return;
 	}

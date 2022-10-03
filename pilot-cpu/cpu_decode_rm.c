@@ -225,50 +225,76 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool s
 bool
 decode_zm_specifier (pilot_decode_state *state, zm_spec zm, bool is_dest, bool is_16bit)
 {
-	mucode_entry_spec *mucode = &state->work_regs.override_op;
-	mucode->is_16bit = is_16bit;
-	mucode->is_write = is_dest;
-	
+	mucode_entry_spec *mucode;
 
 	if (zm & 0x80)
 	{
 		state->work_regs.imm_words[0] = zm & 0x1f;
-	}
-	else
-	{
-		state->work_regs.imm_words[0] = zm & 0x1e;
-	}
+		if (!is_dest)
+		{
+			mucode = &state->work_regs.run_before;
+		}
+		else
+		{
+			mucode = &state->work_regs.run_after;
+		}
+		mucode->is_16bit = is_16bit;
+		mucode->is_write = is_dest;
 
-	if ((zm & 0xe0) == 0xe0)
-	{
-		mucode->entry_idx = MU_IND_ZN;
-		
-	}
-	else if ((zm & 0xe0) == 0xc0)
-	{
-		mucode->entry_idx = MU_IND_DS_IX_IMM0;
-	}
-	else if ((zm & 0xc0) == 0x80)
-	{
-		mucode->entry_idx = MU_IND_REG_WITH_IMM0;
-		mucode->reg_select |= 2 * ((zm & 0x20) != 0);
-	}
-	else if ((zm & 0xe0) == 0x60)
-	{
-		mucode->entry_idx = !(zm & 0x01) ? MU_IND_ZN_IND : MU_IND_ZN_WITH_DS_IND;
-	}
-	else if ((zm & 0xe0) == 0x40)
-	{
-		mucode->entry_idx = !(zm & 0x01) ? MU_IND_ZN_WITH_IX_IND : MU_IND_ZN_DS_IX_IND;
-	}
-	else if ((zm & 0xc0) == 0x00)
-	{
-		mucode->entry_idx = !(zm & 0x01) ? MU_IND_ZN_AUTO_IND : MU_IND_ZN_DS_AUTO_IND;
-		mucode->reg_select |= 8 * ((zm & 0x20) != 0);
+		if ((zm & 0xe0) == 0xe0)
+		{
+			// Zn, ZnL, ZnH
+			execute_control_word *core_op = &state->work_regs.core_op;
+			if (!is_dest)
+			{
+				mucode->entry_idx = MU_IND_IMM0;
+			}
+			else
+			{
+				core_op->srcs[0].location = DATA_LATCH_IMM_0;
+				core_op->operation = ALU_OFF;
+				core_op->dest = DATA_ZERO;
+				core_op->mem_latch_ctl = MEM_LATCH_HALF1_B0;
+				core_op->mem_write_ctl = MEM_WRITE_FROM_SRC1;
+			}
+		}
+		else if ((zm & 0xe0) == 0xc0)
+		{
+			mucode->entry_idx = MU_IND_DS_IX_IMM0;
+		}
+		else if ((zm & 0xc0) == 0x80)
+		{
+			mucode->entry_idx = MU_IND_REG_WITH_IMM0;
+			mucode->reg_select = ((zm & 0x20) != 0);
+		}
+		else
+		{
+			return FALSE;
+		}
 	}
 	else
 	{
-		return FALSE;
+		mucode = &state->work_regs.override_op;
+		mucode->is_16bit = is_16bit;
+		mucode->is_write = is_dest;
+		state->work_regs.imm_words[0] = zm & 0x1e;
+		if ((zm & 0xe0) == 0x60)
+		{
+			mucode->entry_idx = !(zm & 0x01) ? MU_LD_ZN_IND : MU_LD_ZN_WITH_DS_IND;
+		}
+		else if ((zm & 0xe0) == 0x40)
+		{
+			mucode->entry_idx = !(zm & 0x01) ? MU_LD_ZN_WITH_IX_IND : MU_LD_DS_IX_ZN_IND;
+		}
+		else if ((zm & 0xc0) == 0x00)
+		{
+			mucode->entry_idx = !(zm & 0x01) ? MU_LD_ZN_AUTO_IND : MU_LD_ZN_DS_AUTO_IND;
+			mucode->reg_select |= 8 * ((zm & 0x20) != 0);
+		}
+		else
+		{
+			return FALSE;
+		}
 	}
 	
 	return TRUE;
