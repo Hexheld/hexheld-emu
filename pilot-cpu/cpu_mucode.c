@@ -66,7 +66,7 @@ ind_1cyc_imm0_ (mucode_entry_spec spec)
 	mucode_entry prg = base_entry_(spec);
 	prg.operation.srcs[0].location = DATA_LATCH_IMM_0;
 	
-	prg.operation.mem_latch_ctl = MEM_LATCH_HALF1_B0
+	prg.operation.mem_latch_ctl = MEM_LATCH_HALF1_B0;
 	prg.operation.mem_write_ctl = !(spec.is_write) ? MEM_READ : MEM_WRITE_FROM_MDR;
 	return prg;
 }
@@ -350,6 +350,7 @@ zn_ix_fetch_ (mucode_entry_spec spec)
 	prg.operation.srcs[1].location = DATA_LATCH_IMM_0;
 
 	prg.operation.mem_write_ctl = MEM_READ;
+	return prg;
 }
 
 mucode_entry

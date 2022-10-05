@@ -1,27 +1,11 @@
+#ifndef __CPU_DECODE_H__
+#define __CPU_DECODE_H__
+
 #include <stdint.h>
 
 typedef int_fast8_t bool;
 #define TRUE 1
 #define FALSE 0
-
-static enum {
-	// Carry/borrow flag
-	F_CARRY   = 0x01,
-	// When set, operations with DS ignore S, freeing it for general-purpose use
-	F_DS_MODE = 0x02,
-	// Overflow/parity flag
-	F_OVRFLW  = 0x04,
-	// Segment adjust flag
-	F_DS_ADJ  = 0x08,
-	// Half carry flag
-	F_HCARRY  = 0x10,
-	// Interrupt enable
-	F_INT_EN  = 0x20,
-	// Zero flag
-	F_ZERO    = 0x40,
-	// Sign (negative) flag
-	F_NEG     = 0x80
-} flag_masks;
 
 typedef enum
 {
@@ -167,6 +151,9 @@ struct alu_src_control {
 	bool sign_extend;
 };
 
+#define MEM_LATCH_AT_HALF1_MASK 0x10
+#define MEM_LATCH_AT_HALF2_MASK 0x20
+
 typedef struct
 {
 	struct alu_src_control srcs[2];
@@ -212,21 +199,21 @@ typedef struct
 	enum
 	{
 		// Don't latch address
-		MEM_NO_LATCH,
+		MEM_NO_LATCH = 0,
 		// Latches at first half of cycle, address from ALU src0 with bank 0 or 1
-		MEM_LATCH_HALF1_B0,
-		MEM_LATCH_HALF1_B1,
-		MEM_LATCH_HALF1_BD,
+		MEM_LATCH_HALF1_B0 = MEM_LATCH_AT_HALF1_MASK | 0,
+		MEM_LATCH_HALF1_B1 = MEM_LATCH_AT_HALF1_MASK | 1,
+		MEM_LATCH_HALF1_BD = MEM_LATCH_AT_HALF1_MASK | 2,
 		// Latches at second half of cycle, address from ALU dest with bank D, D + ALU.c or 0
-		MEM_LATCH_HALF2_BD,
-		MEM_LATCH_HALF2_B0,
-		MEM_LATCH_HALF2_BD_ALUC,
+		MEM_LATCH_HALF2_B0 = MEM_LATCH_AT_HALF2_MASK | 0,
+		MEM_LATCH_HALF2_BD = MEM_LATCH_AT_HALF2_MASK | 2,
+		MEM_LATCH_HALF2_BD_ALUC = MEM_LATCH_AT_HALF2_MASK | 3,
 		// Latches at second half of cycle, address is whatever was left in MAR (used for destination writeback)
-		MEM_LATCH_HALF2_MAR
+		MEM_LATCH_HALF2_MAR = MEM_LATCH_AT_HALF2_MASK | 8,
 	} mem_latch_ctl;
 	enum
 	{
-		MEM_READ,
+		MEM_READ = 0,
 		// Data is latched from ALU src1
 		MEM_WRITE_FROM_SRC1,
 		// Data is latched from ALU dest
@@ -308,3 +295,5 @@ void decode_unreachable_ ();
 
 // Reads one word from the fetch unit
 void decode_read_word_ (pilot_decode_state *state);
+
+#endif

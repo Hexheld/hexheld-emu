@@ -284,7 +284,7 @@ decode_zm_specifier (pilot_decode_state *state, zm_spec zm, bool is_dest, bool i
 		}
 		else if ((zm & 0xe0) == 0x40)
 		{
-			mucode->entry_idx = !(zm & 0x01) ? MU_LD_ZN_WITH_IX_IND : MU_LD_DS_IX_ZN_IND;
+			mucode->entry_idx = !(zm & 0x01) ? MU_LD_ZN_WITH_IX_IND : MU_LD_ZN_DS_IX_IND;
 		}
 		else if ((zm & 0xc0) == 0x00)
 		{

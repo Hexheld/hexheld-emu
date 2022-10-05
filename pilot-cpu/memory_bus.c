@@ -11,21 +11,21 @@
 #define CART_ROMONLY_START 0x020000
 #define CART_ROMONLY_END   0xffffff
 
-int
+bool
 io_read (Pilot_system *sys)
 {
-	return 1;
+	return TRUE;
 }
 
-int
+bool
 mem_read (Pilot_system *sys)
 {
 	uint32_t addr = sys->memctl.addr_reg;
 	if (addr <= WRAM_END)
 	{
 		addr &= 0x7FFE;
-		sys->memctl.data_reg = (uint16_t)sys->ram[addr] + ((uint16_t)sys->ram[addr + 1] << 8);
-		return 0;
+		sys->memctl.data_reg_in = (uint16_t)sys->ram[addr] + ((uint16_t)sys->ram[addr + 1] << 8);
+		return TRUE;
 	}
 	else if (addr <= VRAM_END)
 	{
@@ -39,7 +39,7 @@ mem_read (Pilot_system *sys)
 	{
 		// call cartridge mapper
 	}
-	return 1;
+	return FALSE;
 }
 
 /*
@@ -77,6 +77,7 @@ Pilot_mem_addr_write_assert (Pilot_system *sys, uint8_t bank, uint16_t addr, uin
 		uint32_t actual_address = ((uint32_t)bank << 16) + addr;
 		
 		sys->memctl.addr_reg = actual_address;
+		sys->memctl.data_reg_out = data;
 		sys->memctl.state = MCTL_MEM_W_BUSY;
 		return MCTL_READY;
 	}
@@ -84,36 +85,36 @@ Pilot_mem_addr_write_assert (Pilot_system *sys, uint8_t bank, uint16_t addr, uin
 	return sys->memctl.state;
 }
 
-int
+bool
 Pilot_mem_data_wait (Pilot_system *sys)
 {
-	if (sys->memctl.state == MCTL_DATA_LATCHED)
+	if (sys->memctl.data_valid)
 	{
-		return 0;
+		return TRUE;
 	}
 
-	return 1;
+	return FALSE;
 }
 
 void
 Pilot_memctl_tick (Pilot_system *sys)
 {
+	sys->memctl.data_valid = FALSE;
 	switch (sys->memctl.state)
 	{
 		case MCTL_MEM_R_BUSY:
-			if (mem_read(sys) == 0)
+			if (mem_read(sys))
 			{
-				sys->memctl.state = MCTL_DATA_LATCHED;
+				sys->memctl.state = MCTL_READY;
+				sys->memctl.data_valid = TRUE;
 			}
 			break;
 		case MCTL_IO_R_BUSY:
-			if (io_read(sys) == 0)
+			if (io_read(sys))
 			{
-				sys->memctl.state = MCTL_DATA_LATCHED;
+				sys->memctl.state = MCTL_READY;
+				sys->memctl.data_valid = TRUE;
 			}
-			break;
-		case MCTL_DATA_LATCHED:
-			sys->memctl.state = MCTL_READY;
 			break;
 		default:
 			break;
@@ -121,7 +122,7 @@ Pilot_memctl_tick (Pilot_system *sys)
 }
 
 uint16_t
-Pilot_mem_read (Pilot_system *sys)
+Pilot_mem_get_data (Pilot_system *sys)
 {
-	return sys->memctl.data_reg;
+	return sys->memctl.data_reg_in;
 }

@@ -82,17 +82,12 @@
  * 
  */
 
-struct pilot_execute_state {
-	struct inst_decoded_flags decoded_inst;
-	execute_control_word *control;
-};
-
 // Runs the invalid opcode exception reporting.
-static void decode_invalid_opcode_ (pilot_decode_state *state);
+void decode_invalid_opcode_ (pilot_decode_state *state);
 
 // Asserts if an RM specifier is valid.
 // NOTE: Special RM specifiers for certain instructions are not checked here and need to be special-case evaluated beforehand.
-static inline bool is_rm_valid_ (rm_spec rm);
+bool is_rm_valid_ (rm_spec rm);
 
 bool decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool src_is_left, bool is_16bit);
 
@@ -357,6 +352,8 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 	decode_invalid_opcode_(state);
 }
 
+void decode_inst_stack_ (pilot_decode_state *state, uint_fast16_t opcode);
+
 static void
 decode_inst_ (pilot_decode_state *state)
 {
@@ -382,5 +379,4 @@ decode_inst_ (pilot_decode_state *state)
 		decode_inst_stack_(state, opcode);
 	}
 }
-
 
