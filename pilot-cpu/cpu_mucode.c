@@ -1,3 +1,4 @@
+#include "cpu_regs.h"
 #include "cpu_decode.h"
 
 /*
@@ -46,6 +47,7 @@ base_entry_ (mucode_entry_spec spec)
 	
 	prg.operation.mem_latch_ctl = MEM_NO_LATCH;
 	prg.operation.mem_16bit = spec.is_16bit;
+	prg.operation.mem_access_suppress = FALSE;
 	return prg;
 }
 
@@ -57,6 +59,14 @@ ind_1cyc_imm_ (mucode_entry_spec spec)
 	
 	prg.operation.mem_latch_ctl = !(spec.bank_select) ? MEM_LATCH_HALF1_B0 : MEM_LATCH_HALF1_B1;
 	prg.operation.mem_write_ctl = !(spec.is_write) ? MEM_READ : MEM_WRITE_FROM_MDR;
+	return prg;
+}
+
+static mucode_entry
+ind_1cyc_imm_d_ (mucode_entry_spec spec)
+{
+	mucode_entry prg = ind_1cyc_imm_(spec);
+	prg.operation.mem_latch_ctl = MEM_LATCH_HALF1_BD;
 	return prg;
 }
 
@@ -154,12 +164,8 @@ ind_2cyc_ds_ (mucode_entry_spec spec)
 			prg.operation.srcs[0].location = DATA_REG_IX;
 		case 4:
 			prg.operation.srcs[0].location = DATA_LATCH_IMM_1;
-		case 5:
-			prg.operation.srcs[0].location = DATA_LATCH_IMM_0;
 		case 6:
 			prg.operation.srcs[0].location = DATA_LATCH_IMM_2;
-		case 7:
-			prg.operation.srcs[0].location = DATA_LATCH_MEM_DATA;
 		default:
 			decode_unreachable_();
 	}
@@ -214,6 +220,9 @@ imm_ix_index_before_ds_ (mucode_entry_spec spec)
 	prg.operation.flag_write_mask = F_DS_ADJ;
 	
 	prg.operation.mem_latch_ctl = MEM_NO_LATCH;
+	
+	prg.next.entry_idx = MU_IND_WITH_DS;
+	prg.next.reg_select = 4 | (spec.reg_select & 2);
 	return prg;
 }
 
@@ -222,9 +231,6 @@ imm0_ix_index_before_ds_ (mucode_entry_spec spec)
 {
 	mucode_entry prg = imm_ix_index_before_ds_(spec);
 	prg.operation.srcs[1].location = DATA_LATCH_IMM_0;
-	prg.operation.dest = DATA_LATCH_IMM_1;
-	prg.next.entry_idx = MU_IND_WITH_DS;
-	prg.next.reg_select = 4;
 	return prg;
 }
 
@@ -269,8 +275,12 @@ mem_data_dereference_ (mucode_entry_spec spec)
 	mucode_entry prg = base_entry_(spec);
 	prg.operation.srcs[0].location = DATA_LATCH_MEM_DATA;
 	
-	prg.operation.mem_latch_ctl = MEM_LATCH_HALF1_B0;
+	prg.operation.mem_latch_ctl = !(spec.bank_select) ? MEM_LATCH_HALF1_B0 : MEM_LATCH_HALF1_BD;
 	prg.operation.mem_write_ctl = MEM_READ;
+	if (spec.is_write)
+	{
+		prg.operation.mem_access_suppress = TRUE;
+	}
 	return prg;
 }
 
@@ -328,6 +338,11 @@ zn_ds_calc_ (mucode_entry_spec spec)
 	prg.operation.shifter_mode = SHIFTER_NONE;
 	
 	prg.operation.dest = DATA_LATCH_MEM_ADDR;
+	prg.operation.mem_latch_ctl = MEM_LATCH_HALF2_BD_ALUC;
+	if (spec.is_write)
+	{
+		prg.operation.mem_access_suppress = TRUE;
+	}
 	return prg;
 }
 
@@ -336,6 +351,7 @@ zn_fetch_ (mucode_entry_spec spec)
 {
 	mucode_entry prg = base_entry_(spec);
 	prg.operation.srcs[0].location = DATA_LATCH_IMM_0;
+	prg.operation.mem_16bit = TRUE;
 
 	prg.operation.mem_latch_ctl = MEM_LATCH_HALF1_B0;
 	prg.operation.mem_write_ctl = MEM_READ;
@@ -354,7 +370,7 @@ zn_ix_fetch_ (mucode_entry_spec spec)
 }
 
 mucode_entry
-decode_mucode_entry (mucode_entry_spec spec)
+decode_mucode_entry (mucode_entry_spec spec, bool d_flag_set)
 {
 	mucode_entry result;
 	switch (spec.entry_idx)
@@ -368,28 +384,43 @@ decode_mucode_entry (mucode_entry_spec spec)
 		case MU_IND_REG_WITH_IMM:
 			return result = ind_2cyc_withimm_(spec);
 		case MU_IND_WITH_DS:
+			if (d_flag_set)
+			{
+				if ((spec.reg_select & 4) == 0)
+				{
+					spec.bank_select = TRUE;
+					return result = ind_1cyc_reg_(spec);
+				}
+				else
+				{
+					return result = ind_1cyc_imm_d_(spec);
+				}
+			}
 			return result = ind_2cyc_ds_(spec);
 		case MU_IND_WITH_DS_AUTO:
-			result = ind_2cyc_ds_(spec);
+			if (d_flag_set)
+			{
+				spec.bank_select = TRUE;
+				result = ind_1cyc_reg_(spec);
+			}
+			else
+			{
+				result = ind_2cyc_ds_(spec);
+			}
 			result.next.entry_idx = MU_POST_AUTOIDX;
 			return result;
 		case MU_IND_DS_IX_IMM:
 			return result = imm_ix_index_before_ds_(spec);
-
-
 		case MU_IND_IMM0:
 			return result = ind_1cyc_imm0_(spec);
 		case MU_IND_REG_WITH_IMM0:
 			return result = ind_2cyc_withimm0_(spec);
 		case MU_IND_DS_IX_IMM0:
 			result = imm0_ix_index_before_ds_(spec);
-			result.next.entry_idx = MU_IND_WITH_DS;
-			result.next.reg_select = 4 | (spec.reg_select & 2);
 
 
 		case MU_LD_ZN_IND:
 			result = zn_fetch_(spec);
-			result.operation.mem_16bit = TRUE;
 			result.next.entry_idx = MU_LD_ZN_IND__DEREFER_;
 			return result;
 		case MU_LD_ZN_IND__DEREFER_:
@@ -427,8 +458,20 @@ decode_mucode_entry (mucode_entry_spec spec)
 			result.next.entry_idx = MU_LD_ZN_WITH_DS_IND__DEREFER_;
 			return result;
 		case MU_LD_ZN_WITH_DS_IND__DEREFER_:
+			if (d_flag_set)
+			{
+				spec.bank_select = TRUE;
+			}
 			result = mem_data_dereference_(spec);
-			result.next.entry_idx = MU_LD_ZN_WITH_DS_IND__DS_CALC_;
+			if (d_flag_set)
+			{
+				result.next.entry_idx = MU_LD_ZN_IND__MOV_;
+			}
+			else
+			{
+				result.operation.mem_access_suppress = TRUE;
+				result.next.entry_idx = MU_LD_ZN_WITH_DS_IND__DS_CALC_;
+			}
 			return result;
 		case MU_LD_ZN_WITH_DS_IND__DS_CALC_:
 			result = zn_ds_calc_(spec);
@@ -446,7 +489,20 @@ decode_mucode_entry (mucode_entry_spec spec)
 			result.next.entry_idx = MU_LD_ZN_DS_AUTO_IND__DEREFER_;
 			return result;
 		case MU_LD_ZN_DS_AUTO_IND__DEREFER_:
+			if (d_flag_set)
+			{
+				spec.bank_select = TRUE;
+			}
 			result = mem_data_dereference_(spec);
+			if (d_flag_set)
+			{
+				result.next.entry_idx = MU_LD_ZN_AUTO_IND__MOV_;
+			}
+			else
+			{
+				result.operation.mem_access_suppress = TRUE;
+				result.next.entry_idx = MU_LD_ZN_DS_AUTO_IND__DS_CALC_;
+			}
 			result.next.entry_idx = MU_LD_ZN_DS_AUTO_IND__DS_CALC_;
 			return result;
 		case MU_LD_ZN_DS_AUTO_IND__DS_CALC_:
@@ -462,7 +518,7 @@ decode_mucode_entry (mucode_entry_spec spec)
 
 
 		case MU_LD_ZN_DS_IX_IND:
-			result = zn_fetch_(spec);
+			result = zn_ix_fetch_(spec);
 			result.operation.mem_16bit = TRUE;
 			result.next.entry_idx = MU_LD_ZN_WITH_DS_IND__DEREFER_;
 			return result;

@@ -10,19 +10,6 @@ static data_bus_specifier imm_word_index[] =
 	DATA_LATCH_IMM_2
 };
 
-static bool
-rm_invalid(pilot_decode_state *state, bool is_dest)
-{
-	(void) state;
-	(void) is_dest;
-	return FALSE;
-}
-
-static rm_decode_func_t decode_jump_table_8bit[] =
-{
-	rm_invalid
-};
-
 static data_bus_specifier rm_register_mapping_8bit[] =
 {
 	DATA_REG__A,
@@ -61,7 +48,7 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool s
 {
 	execute_control_word *core_op = &state->work_regs.core_op;
 	mucode_entry_spec *run_mucode;
-	struct alu_src_control *src_affected;
+	alu_src_control *src_affected;
 	if (src_is_left)
 	{
 		src_affected = &state->work_regs.core_op.srcs[0];

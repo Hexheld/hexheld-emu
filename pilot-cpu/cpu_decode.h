@@ -145,18 +145,18 @@ typedef enum
 	DATA_LATCH_IMM_2
 } data_bus_specifier;
 
-struct alu_src_control {
+typedef struct {
 	data_bus_specifier location;
 	bool is_16bit;
 	bool sign_extend;
-};
+} alu_src_control;
 
 #define MEM_LATCH_AT_HALF1_MASK 0x10
 #define MEM_LATCH_AT_HALF2_MASK 0x20
 
 typedef struct
 {
-	struct alu_src_control srcs[2];
+	alu_src_control srcs[2];
 	data_bus_specifier dest;
 
 	enum
@@ -173,9 +173,11 @@ typedef struct
 	{
 		SHIFTER_NONE,
 		SHIFTER_LEFT,
+		SHIFTER_LEFT_CARRY,
 		SHIFTER_LEFT_BARREL,
 		SHIFTER_RIGHT_LOGICAL,
 		SHIFTER_RIGHT_ARITH,
+		SHIFTER_RIGHT_CARRY,
 		SHIFTER_RIGHT_BARREL
 	} shifter_mode;
 	
@@ -186,7 +188,26 @@ typedef struct
 	
 	// Flag control
 	uint_fast8_t flag_write_mask;
-	bool flag_v_parity;
+	bool invert_carries;
+	enum
+	{
+		FLAG_C_ALU_CARRY,
+		FLAG_C_SHIFTER_CARRY,
+	} flag_c_mode;
+	bool flag_d;
+	enum
+	{
+		FLAG_A_CARRY,
+		FLAG_A_OVERFLOW,
+	} flag_a_mode;
+	enum
+	{
+		FLAG_V_NORMAL,
+		FLAG_V_SHIFTER_CARRY,
+		FLAG_V_CLEAR,
+	} flag_v_mode;
+	
+	
 	
 	// Register swap control
 	
@@ -208,9 +229,11 @@ typedef struct
 		MEM_LATCH_HALF2_B0 = MEM_LATCH_AT_HALF2_MASK | 0,
 		MEM_LATCH_HALF2_BD = MEM_LATCH_AT_HALF2_MASK | 2,
 		MEM_LATCH_HALF2_BD_ALUC = MEM_LATCH_AT_HALF2_MASK | 3,
-		// Latches at second half of cycle, address is whatever was left in MAR (used for destination writeback)
+		// Latches at second half of cycle, address and bank are whatever was left in MAR (used for destination writeback)
 		MEM_LATCH_HALF2_MAR = MEM_LATCH_AT_HALF2_MASK | 8,
 	} mem_latch_ctl;
+	// If set, suppresses memory access assertion if memory is latched in this cycle
+	bool mem_access_suppress;
 	enum
 	{
 		MEM_READ = 0,

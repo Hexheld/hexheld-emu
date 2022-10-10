@@ -11,6 +11,8 @@ typedef struct {
 	
 	uint16_t alu_input_latches[2];
 	uint16_t alu_output_latch;
+	bool alu_shifter_carry_bit;
+	bool alu_half_carry;
 	
 	// Memory address (16-bit) and data registers for requesting memory accesses
 	uint8_t mem_bank;
@@ -161,10 +163,10 @@ write_data_ (pilot_execute_state *state, data_bus_specifier dest, uint16_t *src)
 			ACCESS_REG_(c) = *src & 0xff;
 			return;
 		case DATA_REG_SP:
-			state->sys->core.sp = *src;
+			state->sys->core.sp = *src & 0xfffe;
 			return;
 		case DATA_REG_PC:
-			state->sys->core.pc = *src;
+			state->sys->core.pc = *src & 0xfffe;
 			return;
 		case DATA_REG__K:
 			state->sys->core.k = *src & 0xff;
@@ -254,6 +256,8 @@ execute_half1_mem_prepare (pilot_execute_state *state)
 					execute_unreachable_();
 					state->mem_data = state->alu_output_latch;
 					break;
+				case MEM_WRITE_FROM_MDR:
+					break;
 				default:
 					execute_unreachable_();
 			}
@@ -265,7 +269,8 @@ execute_half1_mem_prepare (pilot_execute_state *state)
 static void
 execute_half1_mem_assert (pilot_execute_state *state)
 {
-	if (state->control->mem_latch_ctl & MEM_LATCH_AT_HALF1_MASK)
+	if (state->control->mem_latch_ctl & MEM_LATCH_AT_HALF1_MASK
+		&& !state->control->mem_access_suppress)
 	{
 		if (state->control->mem_write_ctl == MEM_READ)
 		{
@@ -288,7 +293,7 @@ execute_half1_mem_assert (pilot_execute_state *state)
 	}
 	state->execution_phase = EXEC_HALF2_READY;
 }
-		
+
 static void
 cpu_half1_execute (pilot_execute_state *state)
 {
@@ -319,3 +324,351 @@ cpu_half1_execute (pilot_execute_state *state)
 		execute_half1_mem_assert(state);
 	}
 }
+
+static inline uint16_t
+alu_operate_shifter (pilot_execute_state *state, uint16_t operand)
+{
+	bool inject_bit;
+	bool msb_bit;
+	bool lsb_bit = operand & 1;
+	bool carry_flag = (fetch_data_(state, DATA_REG__F) & F_CARRY) != 0;
+
+	if (state->control->srcs[1].is_16bit)
+	{
+		msb_bit = (operand & 0x8000) != 0;
+	}
+	else
+	{
+		msb_bit = (operand & 0x80) != 0;	
+	}
+	
+	switch (state->control->shifter_mode)
+	{
+		case SHIFTER_NONE:
+		case SHIFTER_LEFT:
+		case SHIFTER_RIGHT_LOGICAL:
+			inject_bit = 0;
+			break;
+		case SHIFTER_LEFT_CARRY:
+		case SHIFTER_RIGHT_CARRY:
+			inject_bit = carry_flag;
+			break;
+		case SHIFTER_LEFT_BARREL:
+		case SHIFTER_RIGHT_ARITH:
+			inject_bit = msb_bit;
+			break;
+		case SHIFTER_RIGHT_BARREL:
+			inject_bit = lsb_bit;
+			break;
+		default:
+			execute_unreachable_();
+	}
+	
+	switch (state->control->shifter_mode)
+	{
+		case SHIFTER_NONE:
+			break;
+		case SHIFTER_LEFT:
+		case SHIFTER_LEFT_CARRY:
+		case SHIFTER_LEFT_BARREL:
+			state->alu_shifter_carry_bit = msb_bit ^ state->control->invert_carries;
+			operand <<= 1;
+			operand |= inject_bit;
+			break;
+		case SHIFTER_RIGHT_LOGICAL:
+		case SHIFTER_RIGHT_ARITH:
+		case SHIFTER_RIGHT_CARRY:
+		case SHIFTER_RIGHT_BARREL:
+			state->alu_shifter_carry_bit = lsb_bit ^ state->control->invert_carries;
+			operand >>= 1;
+			if (state->control->srcs[1].is_16bit)
+			{
+				operand |= inject_bit << 15;
+			}
+			else
+			{
+				operand |= inject_bit << 7;
+			}
+			break;
+		default:
+			execute_unreachable_();
+	}
+	
+	return operand;
+}
+
+#define MODIFY_FLAG(which_flag, value) \
+if ( (value) == TRUE )\
+{\
+	flags |= which_flag ;\
+}\
+else\
+{\
+	flags &= ~which_flag ;\
+}
+static inline uint8_t
+alu_modify_flags (pilot_execute_state *state, uint8_t flags, uint16_t operands[2], uint16_t result, uint16_t carries)
+{
+	bool alu_carry;
+	bool alu_overflow;
+	bool alu_zero;
+	bool alu_neg;
+	uint16_t alu_parity = result;
+	alu_parity = alu_parity ^ alu_parity >> 4;
+	alu_parity = alu_parity ^ alu_parity >> 2;
+	alu_parity = alu_parity ^ alu_parity >> 1;
+	
+	if (state->control->srcs[0].is_16bit)
+	{
+		alu_carry = (carries & 0x8000) != 0;
+		alu_overflow = ((operands[1] ^ result) & (operands[0] ^ result) & 0x8000) != 0;
+		alu_zero = result == 0;
+		alu_neg = (result & 0x8000) != 0;
+		alu_parity = alu_parity ^ alu_parity >> 8;
+	}
+	else
+	{
+		alu_carry = (carries & 0x80) != 0;
+		alu_overflow = ((operands[1] ^ result) & (operands[0] ^ result) & 0x80) != 0;
+		alu_zero = (result & 0xff) == 0;
+		alu_neg = (result & 0x80) != 0;
+	}
+	alu_carry ^= state->control->invert_carries;
+	
+	if (state->control->flag_write_mask & F_CARRY)
+	{
+		switch (state->control->flag_c_mode)
+		{
+			case FLAG_C_ALU_CARRY:
+				MODIFY_FLAG(F_CARRY, alu_carry);
+				break;
+			case FLAG_C_SHIFTER_CARRY:
+				MODIFY_FLAG(F_CARRY, state->alu_shifter_carry_bit);
+				break;
+			default:
+				execute_unreachable_();
+		}
+	}
+	if (state->control->flag_write_mask & F_DS_MODE)
+	{
+		MODIFY_FLAG(F_DS_MODE, state->control->flag_d);
+	}
+	if (state->control->flag_write_mask & F_OVRFLW)
+	{
+		switch (state->control->flag_v_mode)
+		{
+			case FLAG_V_NORMAL:
+				if (state->control->operation == ALU_ADD)
+				{
+					// overflow
+					MODIFY_FLAG(F_OVRFLW, alu_overflow);
+				}
+				else
+				{
+					// parity
+					MODIFY_FLAG(F_OVRFLW, alu_parity & 1);
+				}
+				break;
+			case FLAG_V_SHIFTER_CARRY:
+				MODIFY_FLAG(F_OVRFLW, state->alu_shifter_carry_bit);
+				break;
+			case FLAG_V_CLEAR:
+				MODIFY_FLAG(F_OVRFLW, 0);
+				break;
+			default:
+				execute_unreachable_();
+		}
+	}
+	if (state->control->flag_write_mask & F_DS_ADJ)
+	{
+		MODIFY_FLAG(F_DS_ADJ, alu_carry);
+	}
+	
+	if (state->control->flag_write_mask & F_HCARRY)
+	{
+		MODIFY_FLAG(F_HCARRY, state->alu_half_carry);
+	}
+	if (state->control->flag_write_mask & F_ZERO)
+	{
+		MODIFY_FLAG(F_ZERO, alu_zero);
+	}
+	if (state->control->flag_write_mask & F_NEG)
+	{
+		MODIFY_FLAG(F_NEG, alu_neg);
+	}
+	
+	return flags;
+}
+#undef MODIFY_FLAG
+
+static void
+execute_half2_result_latch (pilot_execute_state *state)
+{
+	int i;
+	uint16_t operands[2];
+	uint16_t carries;
+	alu_src_control *src2 = &state->control->srcs[1];
+	uint8_t flags = fetch_data_(state, DATA_REG__F);
+	bool carry_flag_status = (flags & F_CARRY) != 0;
+	for (i = 0; i < 2; i++)
+	{
+		alu_src_control *src = &state->control->srcs[i];
+		operands[i] = state->alu_input_latches[i];
+		if (!src->is_16bit)
+		{
+			operands[i] &= 0xFF;
+			if (src->sign_extend && (operands[i] & 0x80))
+			{
+				operands[i] |= 0xFF00;
+			}
+		}
+	}
+	
+	if (state->control->src2_add1)
+	{
+		operands[1] += 1;
+	}
+	else if (state->control->src2_add_carry)
+	{
+		operands[1] += carry_flag_status;
+	}
+	
+	if (state->control->src2_negate)
+	{
+		operands[1] = ~operands[1] + 1;
+		if (!src2->is_16bit && !src2->sign_extend)
+		{
+			operands[1] &= 0xff;
+		}
+	}
+	
+	state->alu_shifter_carry_bit = FALSE;
+	operands[1] = alu_operate_shifter(state, operands[1]);
+
+	switch (state->control->operation)
+	{
+		case ALU_OFF:
+			break;
+		case ALU_ADD:
+			state->alu_output_latch = operands[0] + operands[1];
+			carries = operands[0] ^ operands[1] ^ state->alu_output_latch;
+			break;
+		case ALU_AND:
+			state->alu_output_latch = operands[0] & operands[1];
+			carries = 0;
+			break;
+		case ALU_OR:
+			state->alu_output_latch = operands[0] | operands[1];
+			carries = 0;
+			break;
+		case ALU_XOR:
+			state->alu_output_latch = operands[0] ^ operands[1];
+			carries = 0;
+			break;
+		default:
+			execute_unreachable_();
+	}
+	
+	if (state->control->operation != ALU_OFF)
+	{
+		flags = alu_modify_flags(state, flags, operands, state->alu_output_latch, carries);
+	}
+	
+	state->execution_phase = EXEC_HALF2_MEM_PREPARE;
+}
+
+static void
+execute_half2_mem_prepare (pilot_execute_state *state)
+{
+	bool carry_flag = (fetch_data_(state, DATA_REG__F) & F_CARRY) != 0;
+	if (state->control->mem_latch_ctl & MEM_LATCH_AT_HALF2_MASK)
+	{
+		switch (state->control->mem_latch_ctl)
+		{
+			case MEM_LATCH_HALF2_B0:
+				state->mem_bank = 0;
+				break;
+			case MEM_LATCH_HALF2_BD:
+				state->mem_bank = fetch_data_(state, DATA_REG__D);
+				break;
+			case MEM_LATCH_HALF2_BD_ALUC:
+				state->mem_bank = fetch_data_(state, DATA_REG__D) + carry_flag;
+				break;
+			default:
+				execute_unreachable_();
+		}
+		
+		if (state->control->mem_write_ctl != MEM_READ)
+		{
+			switch (state->control->mem_write_ctl)
+			{
+				case MEM_WRITE_FROM_SRC1:
+					// MEM_WRITE_FROM_SRC1 should only be used in cycle 1!
+					execute_unreachable_();
+					state->mem_data = state->alu_input_latches[1];
+					break;
+				case MEM_WRITE_FROM_DEST:
+					state->mem_data = state->alu_output_latch;
+					break;
+				case MEM_WRITE_FROM_MDR:
+					break;
+				default:
+					execute_unreachable_();
+			}
+		}
+	}
+	state->execution_phase = EXEC_HALF2_MEM_ASSERT;
+}
+
+static void
+execute_half2_mem_assert (pilot_execute_state *state)
+{
+	if (state->control->mem_latch_ctl & MEM_LATCH_AT_HALF2_MASK
+		&& !state->control->mem_access_suppress)
+	{
+		if (state->control->mem_write_ctl == MEM_READ)
+		{
+			if (!Pilot_mem_addr_read_assert(
+				state->sys, state->mem_bank, state->mem_addr_low))
+			{
+				return;
+			}
+			state->mem_access_was_read = TRUE;
+		}
+		else
+		{
+			if (!Pilot_mem_addr_write_assert(
+				state->sys, state->mem_bank, state->mem_addr_low, state->mem_data))
+			{
+				return;
+			}
+		}
+		state->mem_access_waiting = TRUE;
+	}
+	state->execution_phase = EXEC_SEQUENCER_WAIT;
+}
+
+static void
+cpu_half2_execute (pilot_execute_state *state)
+{
+	if (state->execution_phase == EXEC_HALF2_READY)
+	{
+		state->execution_phase = EXEC_HALF2_RESULT_LATCH;
+	}
+	
+	if (state->execution_phase == EXEC_HALF2_RESULT_LATCH)
+	{
+		execute_half2_result_latch(state);
+	}
+	
+	if (state->execution_phase == EXEC_HALF2_MEM_PREPARE)
+	{
+		execute_half2_mem_prepare(state);
+	}
+	
+	if (state->execution_phase == EXEC_HALF2_MEM_ASSERT)
+	{
+		execute_half2_mem_assert(state);
+	}
+}
+
