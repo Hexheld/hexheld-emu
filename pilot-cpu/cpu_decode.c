@@ -82,6 +82,9 @@
  * 
  */
 
+// Placeholder
+void decode_not_implemented_ ();
+
 // Runs the invalid opcode exception reporting.
 void decode_invalid_opcode_ (pilot_decode_state *state);
 
@@ -99,11 +102,13 @@ decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
 	if ((opcode & 0xff00) == 0xff00)
 	{
 		// RST
+		decode_not_implemented_();
 		return;
 	}
 	if ((opcode & 0x0400) == 0x0000)
 	{
 		// JR, CALLR
+		decode_not_implemented_();
 		return;
 	}
 
@@ -114,12 +119,15 @@ decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
 			{
 				case 0x0000:
 					// JP, CALL
+					decode_not_implemented_();
 					return;
 				case 0x0080:
 					// JPD, CALLD
+					decode_not_implemented_();
 					return;
 				case 0x00c0:
 					// JPF, CALLF indirect mem24
+					decode_not_implemented_();
 					return;
 				default:
 					break;
@@ -128,25 +136,30 @@ decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
 			if ((opcode & 0x00ff) == 0x0000)
 			{
 				// JRL, CALLRL pcr15
+				decode_not_implemented_();
 				return;
 			}
 			break;
 		case 0x0200:
 			// JPF, CALLF imm24
+			decode_not_implemented_();
 			return;
 		case 0x0300:
 			switch (opcode & 0x00ff)
 			{
 				case 0x0000:
 					// RET
+					decode_not_implemented_();
 					return;
 				case 0x0080:
 					// RETF
+					decode_not_implemented_();
 					return;
 				default:
 					if ((opcode & 0xff1f) == 0xef10)
 					{
 						// RETI
+						decode_not_implemented_();
 						return;
 					}
 					break;
@@ -166,6 +179,7 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 	
 	core_op->shifter_mode = SHIFTER_NONE;
 	core_op->src2_add1 = FALSE;
+	core_op->flag_v_mode = FLAG_V_NORMAL;
 	
 	// Decode reg_select bit
 	if (reg_16bit)
@@ -207,23 +221,20 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 			// ADD, ADC, SUB, SBC
 			core_op->src2_add_carry = operation & 1;
 			core_op->src2_negate = operation & 2;
-			core_op->flag_write_mask = F_NEG | F_ZERO | F_HCARRY | F_OVRFLW | F_CARRY;
-			core_op->flag_v_parity = FALSE;
+			core_op->flag_write_mask = F_NEG | F_ZERO | F_HCARRY | F_DS_ADJ | F_OVRFLW | F_CARRY;
 			break;
 		
 		case 4: case 5: case 6:
 			// AND, XOR, OR
 			core_op->src2_add_carry = FALSE;
 			core_op->src2_negate = FALSE;
-			core_op->flag_write_mask = F_NEG | F_ZERO | F_OVRFLW;
-			core_op->flag_v_parity = TRUE;
+			core_op->flag_write_mask = F_NEG | F_ZERO | F_DS_ADJ | F_OVRFLW;
 			break;
 		case 7:
 			// CP
 			core_op->src2_add_carry = FALSE;
 			core_op->src2_negate = TRUE;
-			core_op->flag_write_mask = F_NEG | F_ZERO | F_HCARRY | F_OVRFLW | F_CARRY;
-			core_op->flag_v_parity = FALSE;
+			core_op->flag_write_mask = F_NEG | F_ZERO | F_HCARRY | F_DS_ADJ |F_OVRFLW | F_CARRY;
 			break;
 		default:
 			decode_unreachable_();
@@ -272,14 +283,19 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 	core_op->src2_add_carry = FALSE;
 	core_op->src2_negate = FALSE;
 	core_op->flag_write_mask = 0;
-	core_op->flag_v_parity = FALSE;
+	core_op->flag_v_mode = FLAG_V_NORMAL;
 
 	// left operand is never fetched and is always zero
 	core_op->srcs[0].location = DATA_ZERO;
 	core_op->operation = ALU_OR;
 	core_op->shifter_mode = SHIFTER_NONE;
 
-	if ((opcode & 0x7800) == 0x5000)
+	if (opcode & 0x8800)
+	{
+		decode_unreachable_();
+	}
+	
+	if ((opcode & 0x7000) == 0x5000)
 	{
 		// zm specifiers
 		uint8_t zm_spec = opcode & 0xff;
@@ -309,7 +325,7 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 		state->work_regs.override_op.reg_select |= (opcode & 0x0100) != 0;
 		return;
 	}
-	if ((opcode & 0x7800) == 0x6000)
+	if ((opcode & 0x7000) == 0x6000)
 	{
 		// rm src/dest
 		rm_spec rm_src = opcode & 0x1f;
@@ -321,7 +337,7 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 		decode_rm_specifier(state, rm_dest, TRUE, FALSE, is_16bit);
 		return;
 	}
-	if ((opcode & 0x7800) == 0x7000)
+	if ((opcode & 0x7000) == 0x7000)
 	{
 		// reg <- imm8
 		switch ((opcode >> 8) & 7)
@@ -352,12 +368,46 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 	decode_invalid_opcode_(state);
 }
 
-void decode_inst_stack_ (pilot_decode_state *state, uint_fast16_t opcode);
+static void
+decode_inst_stack_ (pilot_decode_state *state, uint_fast16_t opcode)
+{
+	(void) state;
+	(void) opcode;
+	decode_not_implemented_();
+}
+
+static void
+decode_inst_ld_other_ (pilot_decode_state *state, uint_fast16_t opcode)
+{
+	execute_control_word *core_op = &state->work_regs.core_op;
+	core_op->src2_add1 = FALSE;
+	core_op->src2_add_carry = FALSE;
+	core_op->src2_negate = FALSE;
+	core_op->flag_write_mask = 0;
+	core_op->flag_v_mode = FLAG_V_NORMAL;
+
+	// left operand is never fetched and is always zero
+	core_op->srcs[0].location = DATA_ZERO;
+	core_op->operation = ALU_OR;
+	
+	core_op->srcs[1].is_16bit = FALSE;
+	core_op->srcs[1].sign_extend = FALSE;
+	core_op->shifter_mode = SHIFTER_NONE;
+	
+	if ((opcode & 0xfe00) == 0x4000)
+	{
+		// ld/add C, imm
+		core_op->srcs[1].location = DATA_LATCH_IMM_0;
+		core_op->dest = DATA_REG__C;
+		return;
+	}
+	
+	decode_invalid_opcode_(state);
+}
 
 static void
 decode_inst_ (pilot_decode_state *state)
 {
-	decode_read_word_(state);
 	uint_fast16_t opcode = state->work_regs.imm_words[0];
 	
 	if (opcode & 0x0800)
@@ -377,6 +427,74 @@ decode_inst_ (pilot_decode_state *state)
 	else if ((opcode & 0x4200) == 0x4200)
 	{
 		decode_inst_stack_(state, opcode);
+	}
+}
+
+void
+pilot_queue_read_word (pilot_decode_state *state)
+{
+	state->inst_length++;
+	state->words_to_read++;
+}
+
+void
+pilot_decode_half1 (pilot_decode_state *state)
+{
+	if (state->decoding_phase == DECODER_HALF1_DISPATCH_WAIT)
+	{
+		bool *decoded_inst_semaph = &state->sys->interconnects.decoded_inst_semaph;
+		if (!(*decoded_inst_semaph))
+		{
+			state->decoding_phase = DECODER_HALF1_READY;
+		}
+	}
+	
+	if (state->decoding_phase == DECODER_HALF1_READY)
+	{
+		state->inst_length = 0;
+		state->decoding_phase = DECODER_HALF1_READ_INST_WORD;
+	}
+	
+	if (state->decoding_phase == DECODER_HALF1_READ_INST_WORD)
+	{
+		bool read_ok = decode_try_read_word_(state);
+		if (read_ok)
+		{
+			state->inst_length++;
+			decode_inst_(state);
+			state->decoding_phase = DECODER_HALF2_READ_OPERANDS;
+		}
+	}
+}
+
+
+void
+pilot_decode_half2 (pilot_decode_state *state)
+{
+	if (state->decoding_phase == DECODER_HALF2_READ_OPERANDS)
+	{
+		if (state->words_to_read > 0)
+		{
+			bool read_ok = decode_try_read_word_(state);
+			if (read_ok)
+			{
+				state->words_to_read--;
+			}
+		}
+		
+		if (state->words_to_read == 0)
+		{
+			state->decoding_phase = DECODER_HALF2_DISPATCH;
+		}
+	}
+	
+	if (state->decoding_phase == DECODER_HALF2_DISPATCH)
+	{
+		state->work_regs.inst_pc = state->pc;
+		state->work_regs.inst_k = state->k;
+		bool *decoded_inst_semaph = &state->sys->interconnects.decoded_inst_semaph;
+		*decoded_inst_semaph = TRUE;
+		state->decoding_phase = DECODER_HALF1_DISPATCH_WAIT;
 	}
 }
 

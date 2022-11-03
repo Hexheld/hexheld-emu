@@ -55,7 +55,7 @@ static mucode_entry
 ind_1cyc_imm_ (mucode_entry_spec spec)
 {
 	mucode_entry prg = base_entry_(spec);
-	prg.operation.srcs[0].location = !(spec.reg_select & 2) ? DATA_LATCH_IMM_1 : DATA_LATCH_IMM_2;
+	prg.operation.srcs[0].location = !(spec.reg_select & 1) ? DATA_LATCH_IMM_1 : DATA_LATCH_IMM_2;
 	
 	prg.operation.mem_latch_ctl = !(spec.bank_select) ? MEM_LATCH_HALF1_B0 : MEM_LATCH_HALF1_B1;
 	prg.operation.mem_write_ctl = !(spec.is_write) ? MEM_READ : MEM_WRITE_FROM_MDR;

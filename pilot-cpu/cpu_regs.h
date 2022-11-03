@@ -1,8 +1,7 @@
 #ifndef __CPU_REGS_H__
 #define __CPU_REGS_H__
 
-#include <stdint.h>
-#include "cpu_decode.h"
+#include "types.h"
 
 struct pilot_regs_data
 {

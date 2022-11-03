@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "cpu_regs.h"
+#include "cpu_interconnect.h"
 
 typedef enum
 {
@@ -29,6 +30,7 @@ typedef struct
 {
 	Pilot_cpu_regs core;
 	Pilot_memctl memctl;
+	pilot_interconnect interconnects;
 	uint8_t ram[0x7fff];
 } Pilot_system;
 

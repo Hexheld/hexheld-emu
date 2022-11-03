@@ -97,7 +97,7 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool s
 	{
 		case 0:
 			// uses imm word
-			decode_read_word_(state);
+			decode_queue_read_word_(state);
 			if (src_affected)
 			{
 				src_affected->sign_extend = FALSE;
@@ -151,16 +151,38 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool s
 			return TRUE;
 		case 1:
 			// HL/IX auto-index indirect
-			run_mucode->reg_select = (2 - !(rm & 16)) | (rm & 8);
-			if (rm & 4)
+			run_mucode->reg_select = 2 - !(rm & 16);
+			if (state->work_regs.auto_incr_amount == 0
+				|| state->work_regs.auto_incr_reg_select == run_mucode->reg_select - 1)
 			{
-				run_mucode->entry_idx = MU_IND_WITH_DS_AUTO;
+				int auto_incr = 2 - !(is_16bit);
+				state->work_regs.auto_incr_amount += (rm & 8) ? auto_incr : -auto_incr;
+
+				if (rm & 4)
+				{
+					run_mucode->entry_idx = MU_IND_WITH_DS;
+				}
+				else
+				{
+					run_mucode->entry_idx = MU_IND_REG;
+					run_mucode->bank_select = 0;
+				}
 			}
 			else
 			{
-				run_mucode->entry_idx = MU_IND_REG_AUTO;
-				run_mucode->bank_select = 0;
+				run_mucode->reg_select |= (rm & 8);
+				if (rm & 4)
+				{
+					run_mucode->entry_idx = MU_IND_WITH_DS_AUTO;
+				}
+				else
+				{
+					run_mucode->entry_idx = MU_IND_REG_AUTO;
+					run_mucode->bank_select = 0;
+				}
 			}
+			run_mucode->is_16bit = is_16bit;
+			run_mucode->is_write = is_dest;
 			return TRUE;
 		case 2:
 			// AB/HL/IX/DS indirect
@@ -179,6 +201,8 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool s
 				run_mucode->entry_idx = MU_IND_REG;
 				run_mucode->bank_select = 0;
 			}
+			run_mucode->is_16bit = is_16bit;
+			run_mucode->is_write = is_dest;
 			return TRUE;
 		case 3:
 			// register direct

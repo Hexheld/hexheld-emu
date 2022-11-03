@@ -1,18 +1,23 @@
+#include <string.h>
 #include "cpu_regs.h"
 #include "cpu_decode.h"
+#include "cpu_execute.h"
 #include "memory.h"
-#include <stdint.h>
+#include "types.h"
 
 typedef struct {
 	Pilot_system *sys;
 	
-	struct inst_decoded_flags decoded_inst;
+	inst_decoded_flags decoded_inst;
+	mucode_entry_spec mucode_control;
+	execute_control_word mucode_decoded_buffer;
 	execute_control_word *control;
 	
 	uint16_t alu_input_latches[2];
 	uint16_t alu_output_latch;
 	bool alu_shifter_carry_bit;
 	bool alu_half_carry;
+	bool a_flag_locked;
 	
 	// Memory address (16-bit) and data registers for requesting memory accesses
 	uint8_t mem_bank;
@@ -37,9 +42,22 @@ typedef struct {
 		EXEC_HALF2_MEM_PREPARE,
 		EXEC_HALF2_MEM_ASSERT,
 		
-		EXEC_SEQUENCER_WAIT,
+		EXEC_ADVANCE_SEQUENCER,
 		EXEC_EXCEPTION
 	} execution_phase;
+	
+	enum
+	{
+		EXEC_SEQ_WAIT_NEXT_INS,
+		EXEC_SEQ_EVAL_CONTROL,
+		EXEC_SEQ_OVERRIDE_OP,
+		EXEC_SEQ_RUN_BEFORE,
+		EXEC_SEQ_CORE_OP,
+		EXEC_SEQ_CORE_OP_EXECUTED,
+		EXEC_SEQ_RUN_AFTER,
+		EXEC_SEQ_FINAL_STEPS,
+		EXEC_SEQ_SIGNAL_BRANCH,
+	} sequencer_phase;
 } pilot_execute_state;
 
 void execute_unreachable_ ();
@@ -202,7 +220,7 @@ write_data_ (pilot_execute_state *state, data_bus_specifier dest, uint16_t *src)
 }
 
 static void
-execute_half1_mem_wait (pilot_execute_state *state)
+execute_half1_mem_wait_ (pilot_execute_state *state)
 {
 	if (state->mem_access_waiting)
 	{
@@ -225,7 +243,7 @@ execute_half1_mem_wait (pilot_execute_state *state)
 }
 
 static void
-execute_half1_mem_prepare (pilot_execute_state *state)
+execute_half1_mem_prepare_ (pilot_execute_state *state)
 {
 	if (state->control->mem_latch_ctl & MEM_LATCH_AT_HALF1_MASK)
 	{
@@ -267,7 +285,7 @@ execute_half1_mem_prepare (pilot_execute_state *state)
 }
 
 static void
-execute_half1_mem_assert (pilot_execute_state *state)
+execute_half1_mem_assert_ (pilot_execute_state *state)
 {
 	if (state->control->mem_latch_ctl & MEM_LATCH_AT_HALF1_MASK
 		&& !state->control->mem_access_suppress)
@@ -294,8 +312,8 @@ execute_half1_mem_assert (pilot_execute_state *state)
 	state->execution_phase = EXEC_HALF2_READY;
 }
 
-static void
-cpu_half1_execute (pilot_execute_state *state)
+void
+pilot_execute_half1 (pilot_execute_state *state)
 {
 	if (state->execution_phase == EXEC_HALF1_READY)
 	{
@@ -304,7 +322,7 @@ cpu_half1_execute (pilot_execute_state *state)
 	
 	if (state->execution_phase == EXEC_HALF1_MEM_WAIT)
 	{
-		execute_half1_mem_wait(state);
+		execute_half1_mem_wait_(state);
 	}
 	
 	if (state->execution_phase == EXEC_HALF1_OPERAND_LATCH)
@@ -316,17 +334,17 @@ cpu_half1_execute (pilot_execute_state *state)
 	
 	if (state->execution_phase == EXEC_HALF1_MEM_PREPARE)
 	{
-		execute_half1_mem_prepare(state);
+		execute_half1_mem_prepare_(state);
 	}
 	
 	if (state->execution_phase == EXEC_HALF1_MEM_ASSERT)
 	{
-		execute_half1_mem_assert(state);
+		execute_half1_mem_assert_(state);
 	}
 }
 
 static inline uint16_t
-alu_operate_shifter (pilot_execute_state *state, uint16_t operand)
+alu_operate_shifter_ (pilot_execute_state *state, uint16_t operand)
 {
 	bool inject_bit;
 	bool msb_bit;
@@ -407,102 +425,85 @@ else\
 	flags &= ~which_flag ;\
 }
 static inline uint8_t
-alu_modify_flags (pilot_execute_state *state, uint8_t flags, uint16_t operands[2], uint16_t result, uint16_t carries)
+alu_modify_flags_ (pilot_execute_state *state, uint8_t flags, uint16_t operands[2], uint16_t result, uint16_t carries)
 {
 	bool alu_carry;
+	bool alu_half_carry;
 	bool alu_overflow;
 	bool alu_zero;
 	bool alu_neg;
+	uint8_t flag_source_word = 0;
 	uint16_t alu_parity = result;
 	alu_parity = alu_parity ^ alu_parity >> 4;
 	alu_parity = alu_parity ^ alu_parity >> 2;
 	alu_parity = alu_parity ^ alu_parity >> 1;
+	alu_half_carry = (carries & 0x0004) != 0;
 	
 	if (state->control->srcs[0].is_16bit)
 	{
 		alu_carry = (carries & 0x8000) != 0;
+		alu_neg = (result & 0x8000) != 0;
 		alu_overflow = ((operands[1] ^ result) & (operands[0] ^ result) & 0x8000) != 0;
 		alu_zero = result == 0;
-		alu_neg = (result & 0x8000) != 0;
 		alu_parity = alu_parity ^ alu_parity >> 8;
 	}
 	else
 	{
 		alu_carry = (carries & 0x80) != 0;
+		alu_neg = (result & 0x80) != 0;
 		alu_overflow = ((operands[1] ^ result) & (operands[0] ^ result) & 0x80) != 0;
 		alu_zero = (result & 0xff) == 0;
-		alu_neg = (result & 0x80) != 0;
 	}
 	alu_carry ^= state->control->invert_carries;
+	alu_half_carry ^= state->control->invert_carries;
 	
-	if (state->control->flag_write_mask & F_CARRY)
+	// S - Sign/negative flag
+	flag_source_word |= alu_neg << 7;
+	// Z - Zero flag
+	flag_source_word |= alu_zero << 6;
+	// I - Master interrupt enable flag
+	flag_source_word |= alu_zero << 5;
+	// H - Half carry flag
+	flag_source_word |= alu_half_carry << 4;
+	// A - Segment adjust flag
+	flag_source_word |= alu_carry << 3;
+	// V - Overflow/parity flag
+	switch (state->control->flag_v_mode)
 	{
-		switch (state->control->flag_c_mode)
-		{
-			case FLAG_C_ALU_CARRY:
-				MODIFY_FLAG(F_CARRY, alu_carry);
-				break;
-			case FLAG_C_SHIFTER_CARRY:
-				MODIFY_FLAG(F_CARRY, state->alu_shifter_carry_bit);
-				break;
-			default:
-				execute_unreachable_();
-		}
+		case FLAG_V_NORMAL:
+			if (state->control->operation == ALU_ADD)
+			{
+				// overflow
+				flag_source_word |= alu_overflow << 2;
+			}
+			else
+			{
+				// parity
+				flag_source_word |= alu_parity << 2;
+			}
+			break;
+		case FLAG_V_SHIFTER_CARRY:
+			flag_source_word |= (state->alu_shifter_carry_bit != 0) << 2;
+			break;
+		case FLAG_V_CLEAR:
+			break;
+		default:
+			execute_unreachable_();
 	}
-	if (state->control->flag_write_mask & F_DS_MODE)
-	{
-		MODIFY_FLAG(F_DS_MODE, state->control->flag_d);
-	}
-	if (state->control->flag_write_mask & F_OVRFLW)
-	{
-		switch (state->control->flag_v_mode)
-		{
-			case FLAG_V_NORMAL:
-				if (state->control->operation == ALU_ADD)
-				{
-					// overflow
-					MODIFY_FLAG(F_OVRFLW, alu_overflow);
-				}
-				else
-				{
-					// parity
-					MODIFY_FLAG(F_OVRFLW, alu_parity & 1);
-				}
-				break;
-			case FLAG_V_SHIFTER_CARRY:
-				MODIFY_FLAG(F_OVRFLW, state->alu_shifter_carry_bit);
-				break;
-			case FLAG_V_CLEAR:
-				MODIFY_FLAG(F_OVRFLW, 0);
-				break;
-			default:
-				execute_unreachable_();
-		}
-	}
-	if (state->control->flag_write_mask & F_DS_ADJ)
-	{
-		MODIFY_FLAG(F_DS_ADJ, alu_carry);
-	}
-	
-	if (state->control->flag_write_mask & F_HCARRY)
-	{
-		MODIFY_FLAG(F_HCARRY, state->alu_half_carry);
-	}
-	if (state->control->flag_write_mask & F_ZERO)
-	{
-		MODIFY_FLAG(F_ZERO, alu_zero);
-	}
-	if (state->control->flag_write_mask & F_NEG)
-	{
-		MODIFY_FLAG(F_NEG, alu_neg);
-	}
+	// D - Data segment mode flag
+	flag_source_word |= (state->control->flag_d != 0) << 1;
+	// C - Carry/borrow flag
+	flag_source_word |= alu_carry;
+
+	flags &= ~state->control->flag_write_mask;
+	flags |= (flag_source_word & state->control->flag_write_mask);
 	
 	return flags;
 }
 #undef MODIFY_FLAG
 
 static void
-execute_half2_result_latch (pilot_execute_state *state)
+execute_half2_result_latch_ (pilot_execute_state *state)
 {
 	int i;
 	uint16_t operands[2];
@@ -543,7 +544,7 @@ execute_half2_result_latch (pilot_execute_state *state)
 	}
 	
 	state->alu_shifter_carry_bit = FALSE;
-	operands[1] = alu_operate_shifter(state, operands[1]);
+	operands[1] = alu_operate_shifter_(state, operands[1]);
 
 	switch (state->control->operation)
 	{
@@ -571,14 +572,14 @@ execute_half2_result_latch (pilot_execute_state *state)
 	
 	if (state->control->operation != ALU_OFF)
 	{
-		flags = alu_modify_flags(state, flags, operands, state->alu_output_latch, carries);
+		flags = alu_modify_flags_(state, flags, operands, state->alu_output_latch, carries);
 	}
 	
 	state->execution_phase = EXEC_HALF2_MEM_PREPARE;
 }
 
 static void
-execute_half2_mem_prepare (pilot_execute_state *state)
+execute_half2_mem_prepare_ (pilot_execute_state *state)
 {
 	bool carry_flag = (fetch_data_(state, DATA_REG__F) & F_CARRY) != 0;
 	if (state->control->mem_latch_ctl & MEM_LATCH_AT_HALF2_MASK)
@@ -621,7 +622,7 @@ execute_half2_mem_prepare (pilot_execute_state *state)
 }
 
 static void
-execute_half2_mem_assert (pilot_execute_state *state)
+execute_half2_mem_assert_ (pilot_execute_state *state)
 {
 	if (state->control->mem_latch_ctl & MEM_LATCH_AT_HALF2_MASK
 		&& !state->control->mem_access_suppress)
@@ -645,11 +646,11 @@ execute_half2_mem_assert (pilot_execute_state *state)
 		}
 		state->mem_access_waiting = TRUE;
 	}
-	state->execution_phase = EXEC_SEQUENCER_WAIT;
+	state->execution_phase = EXEC_ADVANCE_SEQUENCER;
 }
 
-static void
-cpu_half2_execute (pilot_execute_state *state)
+void
+pilot_execute_half2 (pilot_execute_state *state)
 {
 	if (state->execution_phase == EXEC_HALF2_READY)
 	{
@@ -658,17 +659,116 @@ cpu_half2_execute (pilot_execute_state *state)
 	
 	if (state->execution_phase == EXEC_HALF2_RESULT_LATCH)
 	{
-		execute_half2_result_latch(state);
+		execute_half2_result_latch_(state);
 	}
 	
 	if (state->execution_phase == EXEC_HALF2_MEM_PREPARE)
 	{
-		execute_half2_mem_prepare(state);
+		execute_half2_mem_prepare_(state);
 	}
 	
 	if (state->execution_phase == EXEC_HALF2_MEM_ASSERT)
 	{
-		execute_half2_mem_assert(state);
+		execute_half2_mem_assert_(state);
+	}
+}
+
+bool
+pilot_execute_sequencer_mucode_run (pilot_execute_state *state)
+{
+	mucode_entry decoded;
+	bool d_flag_set = (fetch_data_(state, DATA_REG__F) & F_DS_MODE) != 0;
+	
+	decoded = decode_mucode_entry(state->mucode_control, d_flag_set);
+	state->mucode_control = decoded.next;
+	state->mucode_decoded_buffer = decoded.operation;
+	state->control = &state->mucode_decoded_buffer;
+	
+	// Return TRUE if there's another microcode entry to be run
+	if (state->mucode_control.entry_idx != MU_NONE)
+	{
+		return TRUE;
+	}
+	return FALSE;
+}
+
+void
+pilot_execute_sequencer_advance (pilot_execute_state *state)
+{
+	if (state->sequencer_phase == EXEC_SEQ_CORE_OP_EXECUTED)
+	{
+		if (state->decoded_inst.run_after.entry_idx != MU_NONE)
+		{
+			state->sequencer_phase = EXEC_SEQ_RUN_AFTER;
+			state->mucode_control = state->decoded_inst.run_after;
+		}
+		else
+		{
+			state->sequencer_phase = EXEC_SEQ_FINAL_STEPS;
+		}
+	}
+
+	if (state->sequencer_phase == EXEC_SEQ_FINAL_STEPS)
+	{
+		state->sequencer_phase = EXEC_SEQ_WAIT_NEXT_INS;
+	}
+	
+	if (state->sequencer_phase == EXEC_SEQ_WAIT_NEXT_INS)
+	{
+		if (state->sys->interconnects.decoded_inst_semaph)
+		{
+			state->decoded_inst = *state->sys->interconnects.decoded_inst;
+			state->sys->interconnects.decoded_inst_semaph = FALSE;
+			state->sequencer_phase = EXEC_SEQ_EVAL_CONTROL;
+		}
+	}
+	
+	if (state->sequencer_phase == EXEC_SEQ_EVAL_CONTROL)
+	{
+		if (state->decoded_inst.override_op.entry_idx != MU_NONE)
+		{
+			state->sequencer_phase = EXEC_SEQ_OVERRIDE_OP;
+			state->mucode_control = state->decoded_inst.override_op;
+		}
+		else if (state->decoded_inst.run_before.entry_idx != MU_NONE)
+		{
+			state->sequencer_phase = EXEC_SEQ_RUN_BEFORE;
+			state->mucode_control = state->decoded_inst.run_before;
+		}
+		else
+		{
+			state->sequencer_phase = EXEC_SEQ_CORE_OP;
+		}
+	}
+	
+	if (state->sequencer_phase == EXEC_SEQ_OVERRIDE_OP)
+	{
+		if (!pilot_execute_sequencer_mucode_run(state))
+		{
+			state->sequencer_phase = EXEC_SEQ_FINAL_STEPS;
+		}
+	}
+	
+	if (state->sequencer_phase == EXEC_SEQ_RUN_BEFORE)
+	{
+		if (!pilot_execute_sequencer_mucode_run(state))
+		{
+			state->sequencer_phase = EXEC_SEQ_CORE_OP;
+		}
+	}
+	
+	if (state->sequencer_phase == EXEC_SEQ_CORE_OP)
+	{
+		state->control = &state->decoded_inst.core_op;
+		state->sequencer_phase = EXEC_SEQ_CORE_OP_EXECUTED;
+	}
+	
+	if (state->sequencer_phase == EXEC_SEQ_RUN_AFTER)
+	{
+		if (!pilot_execute_sequencer_mucode_run(state))
+		{
+			state->sequencer_phase = EXEC_SEQ_FINAL_STEPS;
+		}
 	}
 }
 
