@@ -13,15 +13,12 @@ typedef struct {
 	execute_control_word mucode_decoded_buffer;
 	execute_control_word *control;
 	
-	uint16_t alu_input_latches[2];
-	uint16_t alu_output_latch;
+	uint_fast24_t alu_input_latches[2];
+	uint_fast24_t alu_output_latch;
 	bool alu_shifter_carry_bit;
-	bool alu_half_carry;
-	bool a_flag_locked;
 	
-	// Memory address (16-bit) and data registers for requesting memory accesses
-	uint8_t mem_bank;
-	uint16_t mem_addr_low;
+	// Memory address and data registers for requesting memory accesses
+	uint_fast24_t mem_addr;
 	uint16_t mem_data;
 	
 	// When reading memory, this flag will be high until the memory access has been completed.
@@ -62,58 +59,92 @@ typedef struct {
 
 void execute_unreachable_ ();
 
-#define ACCESS_REG_(which) \
-	state->sys->core.regs_data[ ( state->sys->core.shadow_ctl & DATAREG_ ## which ) != 0 ] . which
+#define MAX_(a, b) \
+	((a) > (b) ? (a) : (b))
 
-static uint_fast16_t
+static uint_fast24_t
 fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 {
 	switch (src)
 	{
 		case DATA_ZERO:
 			return 0;
-		case DATA_REG__A:
-			return ACCESS_REG_(a);
-		case DATA_REG__B:
-			return ACCESS_REG_(b);
-		case DATA_REG__H:
-			return ACCESS_REG_(h);
-		case DATA_REG__L:
-			return ACCESS_REG_(l);
-		case DATA_REG__I:
-			return ACCESS_REG_(i);
-		case DATA_REG__X:
-			return ACCESS_REG_(x);
-		case DATA_REG__D:
-			return ACCESS_REG_(d);
-		case DATA_REG__S:
-			return ACCESS_REG_(s);
-		case DATA_REG_S_:
-			return ACCESS_REG_(s) << 8;
-		case DATA_REG_AB:
-			return ACCESS_REG_(a) << 8 | ACCESS_REG_(b);
-		case DATA_REG_HL:
-			return ACCESS_REG_(h) << 8 | ACCESS_REG_(l);
-		case DATA_REG_IX:
-			return ACCESS_REG_(i) << 8 | ACCESS_REG_(x);
-		case DATA_REG_DS:
-			return ACCESS_REG_(d) << 8 | ACCESS_REG_(s);
-		case DATA_REG__C:
-			return ACCESS_REG_(c);
+		case DATA_SIZE:
+			{
+				data_size_specifier size = MAX_(state->mucode_decoded_buffer.srcs[0].size, state->mucode_decoded_buffer.srcs[1].size);
+				if (size == SIZE_8_BIT) {
+					if (state->mucode_decoded_buffer.srcs[0].location == DATA_REG_SP || state->mucode_decoded_buffer.srcs[1].location == DATA_REG_SP)
+						return 2;
+					else
+						return 1;
+				}
+				else if (size == SIZE_16_BIT)
+					return 2;
+				else
+					return 4;
+			}
+		case DATA_REG_L0:
+			return state->sys->core.regs[0] & 0xff;
+		case DATA_REG_L1:
+			return state->sys->core.regs[1] & 0xff;
+		case DATA_REG_L2:
+			return state->sys->core.regs[2] & 0xff;
+		case DATA_REG_L3:
+			return state->sys->core.regs[3] & 0xff;
+		case DATA_REG_M0:
+			return (state->sys->core.regs[0] >> 8) & 0xff;
+		case DATA_REG_M1:
+			return (state->sys->core.regs[1] >> 8) & 0xff;
+		case DATA_REG_M2:
+			return (state->sys->core.regs[2] >> 8) & 0xff;
+		case DATA_REG_M3:
+			return (state->sys->core.regs[3] >> 8) & 0xff;
+		case DATA_REG_W0:
+			return state->sys->core.regs[0] & 0xffff;
+		case DATA_REG_W1:
+			return state->sys->core.regs[1] & 0xffff;
+		case DATA_REG_W2:
+			return state->sys->core.regs[2] & 0xffff;
+		case DATA_REG_W3:
+			return state->sys->core.regs[3] & 0xffff;
+		case DATA_REG_W4:
+			return state->sys->core.regs[4] & 0xffff;
+		case DATA_REG_W5:
+			return state->sys->core.regs[5] & 0xffff;
+		case DATA_REG_W6:
+			return state->sys->core.regs[6] & 0xffff;
+		case DATA_REG_W7:
+			return state->sys->core.regs[7] & 0xffff;
+		case DATA_REG_P0:
+			return state->sys->core.regs[0];
+		case DATA_REG_P1:
+			return state->sys->core.regs[1];
+		case DATA_REG_P2:
+			return state->sys->core.regs[2];
+		case DATA_REG_P3:
+			return state->sys->core.regs[3];
+		case DATA_REG_P4:
+			return state->sys->core.regs[4];
+		case DATA_REG_P5:
+			return state->sys->core.regs[5];
+		case DATA_REG_P6:
+			return state->sys->core.regs[6];
 		case DATA_REG_SP:
-			return state->sys->core.sp;
-		case DATA_REG_PC:
-			return state->sys->core.pc;
-		case DATA_REG__K:
-			return state->sys->core.k;
+			return state->sys->core.regs[7];
+		case DATA_REG_PGC:
+			return state->sys->core.pgc;
 		case DATA_REG__F:
-			return ACCESS_REG_(f);
-		case DATA_REG_KF:
-			return state->sys->core.k << 8 & ACCESS_REG_(f);
-		case DATA_REG__E:
-			return state->sys->core.int_mask;
+			return state->sys->core.wf & 0xff;
+		case DATA_REG__W:
+			return state->sys->core.wf >> 8;
+		case DATA_REG_WF:
+			return state->sys->core.wf;
+		case DATA_LATCH_REPI:
+			return state->sys->core.repi;
+		case DATA_LATCH_REPR:
+			return state->sys->core.repr;
 		case DATA_LATCH_MEM_ADDR:
-			return state->mem_addr_low;
+			return state->mem_addr;
 		case DATA_LATCH_MEM_DATA:
 			return state->mem_data;
 		case DATA_LATCH_IMM_0:
@@ -122,97 +153,173 @@ fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 			return state->decoded_inst.imm_words[1];
 		case DATA_LATCH_IMM_2:
 			return state->decoded_inst.imm_words[2];
+		case DATA_LATCH_IMM_HML:
+			return ((state->decoded_inst.imm_words[0] & 0xff) << 16) | state->decoded_inst.imm_words[1];
+		case DATA_LATCH_IMM_HML_RM:
+			return ((state->decoded_inst.imm_words[2] & 0xff) << 16) | state->decoded_inst.imm_words[1];
+		case DATA_LATCH_RM_1:
+			return  state->decoded_inst.imm_words[state->decoded_inst.rm2_offset];
+		case DATA_LATCH_RM_2:
+			return state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1];
+		case DATA_LATCH_RM_HML:
+			return ((state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] & 0xff) << 16) | state->decoded_inst.imm_words[state->decoded_inst.rm2_offset];
+		case DATA_REG_IMM_0_8:
+			return state->sys->core.regs[(state->decoded_inst.imm_words[0] >> 8) & 0x7];
+		case DATA_REG_IMM_1_8:
+			return state->sys->core.regs[(state->decoded_inst.imm_words[1] >> 8) & 0x7];
+		case DATA_REG_IMM_1_2:
+			return state->sys->core.regs[(state->decoded_inst.imm_words[1] >> 2) & 0x7];
+		case DATA_REG_IMM_2_8:
+			return state->sys->core.regs[(state->decoded_inst.imm_words[2] >> 8) & 0x7];
+		case DATA_REG_RM_1_8:
+			return state->sys->core.regs[(state->decoded_inst.imm_words[state->decoded_inst.rm2_offset] >> 8) & 0x7];
+		case DATA_REG_RM_1_2:
+			return state->sys->core.regs[(state->decoded_inst.imm_words[state->decoded_inst.rm2_offset] >> 2) & 0x7];
+		case DATA_REG_RM_2_8:
+			return state->sys->core.regs[(state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] >> 8) & 0x7];
 		default:
 			execute_unreachable_();
 	}
 }
 
 static void
-write_data_ (pilot_execute_state *state, data_bus_specifier dest, uint16_t *src)
+write_data_ (pilot_execute_state *state, data_bus_specifier dest, uint_fast24_t *src)
 {
 	switch (dest)
 	{
 		case DATA_ZERO:
+		case DATA_SIZE:
 			return;
-		case DATA_REG__A:
-			ACCESS_REG_(a) = *src & 0xff;
+		case DATA_REG_L0:
+			state->sys->core.regs[0] &= 0xffff00;
+			state->sys->core.regs[0] |= *src & 0xff;
 			return;
-		case DATA_REG__B:
-			ACCESS_REG_(b) = *src & 0xff;
+		case DATA_REG_L1:
+			state->sys->core.regs[1] &= 0xffff00;
+			state->sys->core.regs[1] |= *src & 0xff;
 			return;
-		case DATA_REG__H:
-			ACCESS_REG_(h) = *src & 0xff;
+		case DATA_REG_L2:
+			state->sys->core.regs[2] &= 0xffff00;
+			state->sys->core.regs[2] |= *src & 0xff;
 			return;
-		case DATA_REG__L:
-			ACCESS_REG_(l) = *src & 0xff;
+		case DATA_REG_L3:
+			state->sys->core.regs[3] &= 0xffff00;
+			state->sys->core.regs[3] |= *src & 0xff;
 			return;
-		case DATA_REG__I:
-			ACCESS_REG_(i) = *src & 0xff;
+		case DATA_REG_M0:
+			state->sys->core.regs[0] &= 0xff00ff;
+			state->sys->core.regs[0] |= ((*src & 0xff) << 8);
 			return;
-		case DATA_REG__X:
-			ACCESS_REG_(x) = *src & 0xff;
+		case DATA_REG_M1:
+			state->sys->core.regs[1] &= 0xff00ff;
+			state->sys->core.regs[1] |= ((*src & 0xff) << 8);
 			return;
-		case DATA_REG__D:
-			ACCESS_REG_(d) = *src & 0xff;
+		case DATA_REG_M2:
+			state->sys->core.regs[2] &= 0xff00ff;
+			state->sys->core.regs[2] |= ((*src & 0xff) << 8);
 			return;
-		case DATA_REG__S:
-			ACCESS_REG_(s) = *src & 0xff;
+		case DATA_REG_M3:
+			state->sys->core.regs[3] &= 0xff00ff;
+			state->sys->core.regs[3] |= ((*src & 0xff) << 8);
 			return;
-		case DATA_REG_S_:
-			ACCESS_REG_(s) = *src >> 8;
+		case DATA_REG_W0:
+			state->sys->core.regs[0] &= 0xff0000;
+			state->sys->core.regs[0] |= *src & 0xffff;
 			return;
-		case DATA_REG_AB:
-			ACCESS_REG_(a) = *src >> 8;
-			ACCESS_REG_(b) = *src & 0xff;
+		case DATA_REG_W1:
+			state->sys->core.regs[1] &= 0xff0000;
+			state->sys->core.regs[1] |= *src & 0xffff;
 			return;
-		case DATA_REG_HL:
-			ACCESS_REG_(h) = *src >> 8;
-			ACCESS_REG_(l) = *src & 0xff;
+		case DATA_REG_W2:
+			state->sys->core.regs[2] &= 0xff0000;
+			state->sys->core.regs[2] |= *src & 0xffff;
 			return;
-		case DATA_REG_IX:
-			ACCESS_REG_(i) = *src >> 8;
-			ACCESS_REG_(x) = *src & 0xff;
+		case DATA_REG_W3:
+			state->sys->core.regs[3] &= 0xff0000;
+			state->sys->core.regs[3] |= *src & 0xffff;
 			return;
-		case DATA_REG_DS:
-			ACCESS_REG_(d) = *src >> 8;
-			ACCESS_REG_(s) = *src & 0xff;
+		case DATA_REG_W4:
+			state->sys->core.regs[4] &= 0xff0000;
+			state->sys->core.regs[4] |= *src & 0xffff;
 			return;
-		case DATA_REG__C:
-			ACCESS_REG_(c) = *src & 0xff;
+		case DATA_REG_W5:
+			state->sys->core.regs[5] &= 0xff0000;
+			state->sys->core.regs[5] |= *src & 0xffff;
+			return;
+		case DATA_REG_W6:
+			state->sys->core.regs[6] &= 0xff0000;
+			state->sys->core.regs[6] |= *src & 0xffff;
+			return;
+		case DATA_REG_W7:
+			state->sys->core.regs[7] &= 0xff0000;
+			state->sys->core.regs[7] |= *src & 0xffff;
+			return;
+		case DATA_REG_P0:
+			state->sys->core.regs[0] = *src & 0xffffff;
+			return;
+		case DATA_REG_P1:
+			state->sys->core.regs[1] = *src & 0xffffff;
+			return;
+		case DATA_REG_P2:
+			state->sys->core.regs[2] = *src & 0xffffff;
+			return;
+		case DATA_REG_P3:
+			state->sys->core.regs[3] = *src & 0xffffff;
+			return;
+		case DATA_REG_P4:
+			state->sys->core.regs[4] = *src & 0xffffff;
+			return;
+		case DATA_REG_P5:
+			state->sys->core.regs[5] = *src & 0xffffff;
+			return;
+		case DATA_REG_P6:
+			state->sys->core.regs[6] = *src & 0xffffff;
 			return;
 		case DATA_REG_SP:
-			state->sys->core.sp = *src & 0xfffe;
-			return;
-		case DATA_REG_PC:
-			state->sys->core.pc = *src & 0xfffe;
-			return;
-		case DATA_REG__K:
-			state->sys->core.k = *src & 0xff;
+			state->sys->core.regs[7] = *src & 0xffffff;
 			return;
 		case DATA_REG__F:
-			ACCESS_REG_(f) = *src & 0xff;
+			state->sys->core.wf &= 0xff00;
+			state->sys->core.wf |= *src & 0xff;
 			return;
-		case DATA_REG_KF:
-			state->sys->core.k = *src >> 8;
-			ACCESS_REG_(f) = *src & 0xff;
+		case DATA_REG__W:
+			state->sys->core.wf &= 0x00ff;
+			state->sys->core.wf |= ((*src & 0xff) << 8);
 			return;
-		case DATA_REG__E:
-			state->sys->core.int_mask = *src & 0xff;
+		case DATA_REG_WF:
+			state->sys->core.wf = *src & 0xffff;
+			return;
+		case DATA_REG_PGC:
+			state->sys->core.pgc = *src & 0xfffffe;
 			return;
 		case DATA_LATCH_MEM_ADDR:
-			state->mem_addr_low = *src;
+			state->mem_addr = *src;
 			return;
 		case DATA_LATCH_MEM_DATA:
 			state->mem_data = *src;
 			return;
+		case DATA_REG_IMM_0_8:
+			state->sys->core.regs[(state->decoded_inst.imm_words[0] >> 8) & 0x7] = *src;
+		case DATA_REG_IMM_1_8:
+			state->sys->core.regs[(state->decoded_inst.imm_words[1] >> 8) & 0x7] = *src;
+		case DATA_REG_IMM_1_2:
+			state->sys->core.regs[(state->decoded_inst.imm_words[1] >> 2) & 0x7] = *src;
+		case DATA_REG_IMM_2_8:
+			state->sys->core.regs[(state->decoded_inst.imm_words[2] >> 8) & 0x7] = *src;
+		case DATA_REG_RM_1_8:
+			state->sys->core.regs[(state->decoded_inst.imm_words[state->decoded_inst.rm2_offset] >> 8) & 0x7] = *src;
+		case DATA_REG_RM_1_2:
+			 state->sys->core.regs[(state->decoded_inst.imm_words[state->decoded_inst.rm2_offset] >> 2) & 0x7] = *src;
+		case DATA_REG_RM_2_8:
+			state->sys->core.regs[(state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] >> 8) & 0x7] = *src;
 		case DATA_LATCH_IMM_0:
-			state->decoded_inst.imm_words[0] = *src;
-			return;
 		case DATA_LATCH_IMM_1:
-			state->decoded_inst.imm_words[1] = *src;
-			return;
 		case DATA_LATCH_IMM_2:
-			state->decoded_inst.imm_words[2] = *src;
+		case DATA_LATCH_IMM_HML:
+		case DATA_LATCH_IMM_HML_RM:
+		case DATA_LATCH_RM_1:
+		case DATA_LATCH_RM_2:
+		case DATA_LATCH_RM_HML:
 			return;
 		default:
 			execute_unreachable_();
@@ -245,23 +352,8 @@ execute_half1_mem_wait_ (pilot_execute_state *state)
 static void
 execute_half1_mem_prepare_ (pilot_execute_state *state)
 {
-	if (state->control->mem_latch_ctl & MEM_LATCH_AT_HALF1_MASK)
+	if (state->control->mem_latch_ctl == MEM_LATCH_HALF1)
 	{
-		switch (state->control->mem_latch_ctl)
-		{
-			case MEM_LATCH_HALF1_B0:
-				state->mem_bank = 0;
-				break;
-			case MEM_LATCH_HALF1_B1:
-				state->mem_bank = 1;
-				break;
-			case MEM_LATCH_HALF1_BD:
-				state->mem_bank = fetch_data_(state, DATA_REG__D);
-				break;
-			default:
-				execute_unreachable_();
-		}
-		
 		if (state->control->mem_write_ctl != MEM_READ)
 		{
 			switch (state->control->mem_write_ctl)
@@ -287,13 +379,11 @@ execute_half1_mem_prepare_ (pilot_execute_state *state)
 static void
 execute_half1_mem_assert_ (pilot_execute_state *state)
 {
-	if (state->control->mem_latch_ctl & MEM_LATCH_AT_HALF1_MASK
-		&& !state->control->mem_access_suppress)
+	if (state->control->mem_latch_ctl == MEM_LATCH_HALF1 && !state->control->mem_access_suppress)
 	{
 		if (state->control->mem_write_ctl == MEM_READ)
 		{
-			if (!Pilot_mem_addr_read_assert(
-				state->sys, state->mem_bank, state->mem_addr_low))
+			if (!Pilot_mem_addr_read_assert(state->sys, state->mem_addr))
 			{
 				return;
 			}
@@ -301,8 +391,7 @@ execute_half1_mem_assert_ (pilot_execute_state *state)
 		}
 		else
 		{
-			if (!Pilot_mem_addr_write_assert(
-				state->sys, state->mem_bank, state->mem_addr_low, state->mem_data))
+			if (!Pilot_mem_addr_write_assert(state->sys, state->mem_addr, state->mem_data))
 			{
 				return;
 			}
@@ -350,14 +439,18 @@ alu_operate_shifter_ (pilot_execute_state *state, uint16_t operand)
 	bool msb_bit;
 	bool lsb_bit = operand & 1;
 	bool carry_flag = (fetch_data_(state, DATA_REG__F) & F_CARRY) != 0;
-
-	if (state->control->srcs[1].is_16bit)
+	
+	if (state->control->srcs[1].size == SIZE_8_BIT)
+	{
+		msb_bit = (operand & 0x80) != 0;
+	}
+	else if (state->control->srcs[1].size == SIZE_16_BIT)
 	{
 		msb_bit = (operand & 0x8000) != 0;
 	}
 	else
 	{
-		msb_bit = (operand & 0x80) != 0;	
+		msb_bit = (operand & 0x800000) != 0;
 	}
 	
 	switch (state->control->shifter_mode)
@@ -415,58 +508,49 @@ alu_operate_shifter_ (pilot_execute_state *state, uint16_t operand)
 	return operand;
 }
 
-#define MODIFY_FLAG(which_flag, value) \
-if ( (value) == TRUE )\
-{\
-	flags |= which_flag ;\
-}\
-else\
-{\
-	flags &= ~which_flag ;\
-}
 static inline uint8_t
-alu_modify_flags_ (pilot_execute_state *state, uint8_t flags, uint16_t operands[2], uint16_t result, uint16_t carries)
+alu_modify_flags_ (pilot_execute_state *state, uint8_t flags, uint_fast24_t operands[2], uint_fast24_t result, uint_fast24_t carries)
 {
 	bool alu_carry;
-	bool alu_half_carry;
 	bool alu_overflow;
 	bool alu_zero;
 	bool alu_neg;
 	uint8_t flag_source_word = 0;
-	uint16_t alu_parity = result;
+	
+	uint_fast24_t alu_parity = result;
 	alu_parity = alu_parity ^ alu_parity >> 4;
 	alu_parity = alu_parity ^ alu_parity >> 2;
 	alu_parity = alu_parity ^ alu_parity >> 1;
-	alu_half_carry = (carries & 0x0004) != 0;
 	
-	if (state->control->srcs[0].is_16bit)
-	{
-		alu_carry = (carries & 0x8000) != 0;
-		alu_neg = (result & 0x8000) != 0;
-		alu_overflow = ((operands[1] ^ result) & (operands[0] ^ result) & 0x8000) != 0;
-		alu_zero = result == 0;
-		alu_parity = alu_parity ^ alu_parity >> 8;
-	}
-	else
+	if (state->control->srcs[0].size == SIZE_8_BIT)
 	{
 		alu_carry = (carries & 0x80) != 0;
 		alu_neg = (result & 0x80) != 0;
 		alu_overflow = ((operands[1] ^ result) & (operands[0] ^ result) & 0x80) != 0;
 		alu_zero = (result & 0xff) == 0;
 	}
+	else if (state->control->srcs[0].size == SIZE_16_BIT)
+	{
+		alu_carry = (carries & 0x8000) != 0;
+		alu_neg = (result & 0x8000) != 0;
+		alu_overflow = ((operands[1] ^ result) & (operands[0] ^ result) & 0x8000) != 0;
+		alu_zero = (result & 0xffff) == 0;
+		alu_parity ^= (alu_parity >> 8);
+	}
+	else
+	{
+		alu_carry = (carries & 0x800000) != 0;
+		alu_neg = (result & 0x800000) != 0;
+		alu_overflow = ((operands[1] ^ result) & (operands[0] ^ result) & 0x800000) != 0;
+		alu_zero = (result) == 0;
+		alu_parity ^= (alu_parity >> 16);
+	}
 	alu_carry ^= state->control->invert_carries;
-	alu_half_carry ^= state->control->invert_carries;
 	
 	// S - Sign/negative flag
 	flag_source_word |= alu_neg << 7;
 	// Z - Zero flag
 	flag_source_word |= alu_zero << 6;
-	// I - Master interrupt enable flag
-	flag_source_word |= alu_zero << 5;
-	// H - Half carry flag
-	flag_source_word |= alu_half_carry << 4;
-	// A - Segment adjust flag
-	flag_source_word |= alu_carry << 3;
 	// V - Overflow/parity flag
 	switch (state->control->flag_v_mode)
 	{
@@ -490,24 +574,23 @@ alu_modify_flags_ (pilot_execute_state *state, uint8_t flags, uint16_t operands[
 		default:
 			execute_unreachable_();
 	}
-	// D - Data segment mode flag
-	flag_source_word |= (state->control->flag_d != 0) << 1;
-	// C - Carry/borrow flag
+	
+	// C, X - Carry/borrow flags
+	flag_source_word |= alu_carry << 1;
 	flag_source_word |= alu_carry;
-
+	
 	flags &= ~state->control->flag_write_mask;
 	flags |= (flag_source_word & state->control->flag_write_mask);
 	
 	return flags;
 }
-#undef MODIFY_FLAG
 
 static void
 execute_half2_result_latch_ (pilot_execute_state *state)
 {
 	int i;
-	uint16_t operands[2];
-	uint16_t carries;
+	uint_fast24_t operands[2];
+	
 	alu_src_control *src2 = &state->control->srcs[1];
 	uint8_t flags = fetch_data_(state, DATA_REG__F);
 	bool carry_flag_status = (flags & F_CARRY) != 0;
@@ -515,12 +598,20 @@ execute_half2_result_latch_ (pilot_execute_state *state)
 	{
 		alu_src_control *src = &state->control->srcs[i];
 		operands[i] = state->alu_input_latches[i];
-		if (!src->is_16bit)
+		if (src->size == SIZE_8_BIT)
 		{
-			operands[i] &= 0xFF;
+			operands[i] &= 0xff;
 			if (src->sign_extend && (operands[i] & 0x80))
 			{
-				operands[i] |= 0xFF00;
+				operands[i] |= 0xffff00;
+			}
+		}
+		else if (src->size == SIZE_16_BIT)
+		{
+			operands[i] &= 0xffff;
+			if (src->sign_extend && (operands[i] & 0x8000))
+			{
+				operands[i] |= 0xff0000;
 			}
 		}
 	}
@@ -537,9 +628,13 @@ execute_half2_result_latch_ (pilot_execute_state *state)
 	if (state->control->src2_negate)
 	{
 		operands[1] = ~operands[1] + 1;
-		if (!src2->is_16bit && !src2->sign_extend)
+		if (src2->size == SIZE_8_BIT && !src2->sign_extend)
 		{
 			operands[1] &= 0xff;
+		}
+		else if (src2->size == SIZE_16_BIT && !src2->sign_extend)
+		{
+			operands[1] &= 0xffff;
 		}
 	}
 	
@@ -570,6 +665,11 @@ execute_half2_result_latch_ (pilot_execute_state *state)
 			execute_unreachable_();
 	}
 	
+	if ((&state->control->srcs[0].size == SIZE_8_BIT) && (flags & F_DECIMAL) && (carries & 0x08))
+	{
+		state->alu_output_latch = state->alu_output_latch + 0x10;
+		carries = (carries & 0x0f) | ((operands[0] ^ operands[1] ^ state->alu_output_latch) & 0xf0);
+	
 	if (state->control->operation != ALU_OFF)
 	{
 		flags = alu_modify_flags_(state, flags, operands, state->alu_output_latch, carries);
@@ -582,23 +682,13 @@ static void
 execute_half2_mem_prepare_ (pilot_execute_state *state)
 {
 	bool carry_flag = (fetch_data_(state, DATA_REG__F) & F_CARRY) != 0;
-	if (state->control->mem_latch_ctl & MEM_LATCH_AT_HALF2_MASK)
+	
+	if (state->control->mem_latch_ctl == MEM_LATCH_HALF2)
 	{
-		switch (state->control->mem_latch_ctl)
-		{
-			case MEM_LATCH_HALF2_B0:
-				state->mem_bank = 0;
-				break;
-			case MEM_LATCH_HALF2_BD:
-				state->mem_bank = fetch_data_(state, DATA_REG__D);
-				break;
-			case MEM_LATCH_HALF2_BD_ALUC:
-				state->mem_bank = fetch_data_(state, DATA_REG__D) + carry_flag;
-				break;
-			default:
-				execute_unreachable_();
-		}
-		
+		state->mem_addr = state->alu_output_latch;
+	}
+	if (state->control->mem_latch_ctl >= MEM_LATCH_HALF2)
+	{
 		if (state->control->mem_write_ctl != MEM_READ)
 		{
 			switch (state->control->mem_write_ctl)
@@ -618,19 +708,19 @@ execute_half2_mem_prepare_ (pilot_execute_state *state)
 			}
 		}
 	}
+	
 	state->execution_phase = EXEC_HALF2_MEM_ASSERT;
 }
 
 static void
 execute_half2_mem_assert_ (pilot_execute_state *state)
 {
-	if (state->control->mem_latch_ctl & MEM_LATCH_AT_HALF2_MASK
-		&& !state->control->mem_access_suppress)
+	if (state->control->mem_latch_ctl >= MEM_LATCH_HALF2 && !state->control->mem_access_suppress)
 	{
 		if (state->control->mem_write_ctl == MEM_READ)
 		{
 			if (!Pilot_mem_addr_read_assert(
-				state->sys, state->mem_bank, state->mem_addr_low))
+				state->sys, state->mem_addr))
 			{
 				return;
 			}
@@ -638,8 +728,7 @@ execute_half2_mem_assert_ (pilot_execute_state *state)
 		}
 		else
 		{
-			if (!Pilot_mem_addr_write_assert(
-				state->sys, state->mem_bank, state->mem_addr_low, state->mem_data))
+			if (!Pilot_mem_addr_write_assert(state->sys, state->mem_addr, state->mem_data))
 			{
 				return;
 			}
@@ -677,9 +766,8 @@ bool
 pilot_execute_sequencer_mucode_run (pilot_execute_state *state)
 {
 	mucode_entry decoded;
-	bool d_flag_set = (fetch_data_(state, DATA_REG__F) & F_DS_MODE) != 0;
 	
-	decoded = decode_mucode_entry(state->mucode_control, d_flag_set);
+	decoded = decode_mucode_entry(state->mucode_control);
 	state->mucode_control = decoded.next;
 	state->mucode_decoded_buffer = decoded.operation;
 	state->control = &state->mucode_decoded_buffer;
