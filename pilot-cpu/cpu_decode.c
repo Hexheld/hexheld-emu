@@ -109,7 +109,7 @@ decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
 		decode_not_implemented_();
 		return;
 	}
-	if (opcode & 0xf800 == 0xf000)
+	if ((opcode & 0xf800) == 0xf000)
 	{
 		if (!(opcode & 0xff))
 		{
@@ -321,96 +321,60 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 	// left operand is never fetched and is always zero
 	core_op->srcs[0].location = DATA_ZERO;
 	core_op->srcs[0].size = size;
+	core_op->srcs[1].size = size;
 	core_op->operation = ALU_OR;
 	core_op->shifter_mode = SHIFTER_NONE;
-
-	// currently up to here with rewriting
 	
-	if (opcode & 0x8800)
+	if ((opcode & 0x00c0) == 0x00c0)
 	{
-		decode_unreachable_();
-	}
-	
-	if ((opcode & 0x7000) == 0x5000)
-	{
-		// zm specifiers
-		uint8_t zm_spec = opcode & 0xff;
+		// one RM specifier
+		rm_spec rm_src = opcode & 0x3f;
 		data_bus_specifier reg;
-		bool zm_is_dest = !(opcode & 0x0200);
-		if (is_16bit)
+
+		core_op->srcs[0].size = SIZE_24_BIT;
+		core_op->dest = DATA_REG_IMM_0_8;
+
+		if ((opcode & 0x8800) == 0x0800)
 		{
-			 reg = !(opcode & 0x0100) ? DATA_REG_AB : DATA_REG_HL;
+			// LDSX
+			core_op->srcs[1].sign_extend = TRUE;
 		}
-		else
+		if ((opcode & 0xf800) == 0x9800)
 		{
-			 reg = !(opcode & 0x0100) ? DATA_REG__A : DATA_REG__B;
+			// LEA with pre-decrement (uses the RM decoder to handle the auto-index)
+			rm_spec dummy_rm = (opcode & 0x0f80) >> 12;
+			decode_rm_specifier(state, dummy_rm, TRUE, FALSE, size);
 		}
+
+		// if LEA @-r24, this will technically be treated as the second RM operand, but in no case is the value used
+		decode_rm_specifier(state, rm_src, FALSE, FALSE, size);
 		
-		if (zm_is_dest)
-		{
-			core_op->srcs[1].location = reg;
-			core_op->dest = DATA_LATCH_MEM_DATA;
-		}
-		else
-		{
-			core_op->srcs[1].location = DATA_LATCH_MEM_DATA;
-			core_op->dest = reg;
-		}
-		
-		decode_zm_specifier(state, zm_spec, zm_is_dest, is_16bit);
-		state->work_regs.override_op.reg_select |= (opcode & 0x0100) != 0;
 		return;
 	}
-	if ((opcode & 0x7000) == 0x6000)
+	else
 	{
-		// rm src/dest
-		rm_spec rm_src = opcode & 0x1f;
-		rm_spec rm_dest = (opcode >> 5) & 0x1f;
+		// LD (two RM specifiers)
+		rm_spec rm_src = opcode & 0x3f;
+		rm_spec rm_dest = (opcode >> 6) & 0x3f;
 		// fetch src (right operand)
-		decode_rm_specifier(state, rm_src, FALSE, FALSE, is_16bit);
+		decode_rm_specifier(state, rm_src, FALSE, FALSE, size);
 		// write into dest (left operand)
 		// does not need to be fetched, hence it's not a source, so don't set src_is_left
-		decode_rm_specifier(state, rm_dest, TRUE, FALSE, is_16bit);
-		return;
-	}
-	if ((opcode & 0x7000) == 0x7000)
-	{
-		// reg <- imm8
-		switch ((opcode >> 8) & 7)
-		{
-			case 0:
-				core_op->dest = DATA_REG__A;
-			case 1:
-				core_op->dest = DATA_REG__H;
-			case 2:
-				core_op->dest = DATA_REG__I;
-			case 3:
-				core_op->dest = DATA_REG__D;
-			case 4:
-				core_op->dest = DATA_REG__B;
-			case 5:
-				core_op->dest = DATA_REG__L;
-			case 6:
-				core_op->dest = DATA_REG__X;
-			case 7:
-				core_op->dest = DATA_REG__S;
-		}
-		core_op->srcs[1].location = DATA_LATCH_IMM_0;
-		core_op->srcs[1].is_16bit = FALSE;
-		core_op->srcs[1].sign_extend = FALSE;
+		decode_rm_specifier(state, rm_dest, TRUE, FALSE, size);
 		return;
 	}
 	
-	decode_invalid_opcode_(state);
+	decode_unreachable_(state);
 }
 
 static void
-decode_inst_stack_ (pilot_decode_state *state, uint_fast16_t opcode)
+decode_inst_bitwise_ (pilot_decode_state *state, uint_fast16_t opcode)
 {
-	(void) state;
-	(void) opcode;
 	decode_not_implemented_();
+	return;
 }
+
+// scratchminer: currently here for editing
 
 static void
 decode_inst_ld_other_ (pilot_decode_state *state, uint_fast16_t opcode)
