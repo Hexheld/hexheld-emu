@@ -319,8 +319,8 @@ typedef struct
 		COND_U_GT,       // unsigned greater than
 		COND_C,          // carry set; unsigned less than
 		COND_NC,         // carry clear; unsigned greater than or equal
-		COND_S,          // negative; sign set
-		COND_NS,         // positive; sign clear
+		COND_M,          // minus; sign set
+		COND_P,          // plus; sign clear
 		COND_V,          // overflow; parity even
 		COND_NV,         // not overflow; parity odd
 		COND_Z,          // equal; zero
