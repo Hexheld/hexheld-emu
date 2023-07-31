@@ -88,10 +88,7 @@ void decode_not_implemented_ ();
 // Runs the invalid opcode exception reporting.
 void decode_invalid_opcode_ (pilot_decode_state *state);
 
-// Asserts if an RM specifier is valid.
-// NOTE: Special RM specifiers for certain instructions are not checked here and need to be special-case evaluated beforehand.
-bool is_rm_valid_ (rm_spec rm);
-
+// Decodes an RM specifier.
 bool decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool src_is_left, data_size_spec size);
 
 static inline void
@@ -165,8 +162,52 @@ decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
 			}
 		}
 	}
-
+	
 	decode_invalid_opcode_(state);
+	return;
+}
+
+static void
+decode_inst_bit_ (pilot_decode_state *state, uint_fast16_t opcode)
+{
+	decode_not_implemented_();
+	return;
+}
+
+static void
+decode_inst_ld_other_ (pilot_decode_state *state, uint_fast16_t opcode)
+{
+	execute_control_word *core_op = &state->work_regs.core_op;
+	core_op->src2_add1 = FALSE;
+	core_op->src2_add_carry = FALSE;
+	core_op->src2_negate = FALSE;
+	core_op->flag_write_mask = 0;
+	core_op->flag_v_mode = FLAG_V_NORMAL;
+
+	// left operand is never fetched and is always zero
+	core_op->srcs[0].location = DATA_ZERO;
+	core_op->srcs[0].size = SIZE_24_BIT;
+	core_op->operation = ALU_OR;
+
+	core_op->srcs[1].location = DATA_REG_IMM_0;
+
+	core_op->dest = DATA_REG_IMM_0_8;
+	core_op->shifter_mode = SHIFTER_NONE;
+	
+	if ((opcode & 0x0800) == 0x0000)
+	{
+		// LD.P r24, hml
+		core_op->srcs[1].size = SIZE_24_BIT;
+		core_op->srcs[1].sign_extend = FALSE;
+		return;
+	}
+	else
+	{
+		// LDQ
+		core_op->srcs[1].size = SIZE_8_BIT;
+		core_op->srcs[1].sign_extend = TRUE;
+		return;
+	}
 }
 
 static inline void
@@ -258,9 +299,9 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 					// CP
 					core_op->operation = ALU_ADD;
 					core_op->src2_add_carry = FALSE;
-				core_op->src2_negate = TRUE;
-				core_op->flag_write_mask = F_NEG | F_ZERO | F_OVERFLOW | F_CARRY;
-				break;
+					core_op->src2_negate = TRUE;
+					core_op->flag_write_mask = F_NEG | F_ZERO | F_OVERFLOW | F_CARRY;
+					break;
 			default:
 				decode_unreachable_();
 			}
@@ -292,7 +333,7 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 		decode_rm_specifier(state, rm, TRUE, TRUE, size);
 		state->work_regs.core_op.srcs[0].size = size;
 		state->work_regs.core_op.srcs[0].sign_extend = FALSE;
-
+		
 		state->work_regs.core_op.srcs[1].location = DATA_LATCH_IMM_1;
 		state->work_regs.core_op.srcs[1].size = size;
 		state->work_regs.core_op.srcs[1].sign_extend = FALSE;
@@ -303,8 +344,6 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 		}
 		return;
 	}
-	
-	decode_invalid_opcode_(state);
 }
 
 static void
@@ -345,8 +384,8 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 			rm_spec dummy_rm = (opcode & 0x0f80) >> 12;
 			decode_rm_specifier(state, dummy_rm, TRUE, FALSE, size);
 		}
-
-		// if LEA @-r24, this will technically be treated as the second RM operand, but in no case is the value used
+		
+		// if LEA @-r24, this will technically be treated as the second RM operand, but that operand is never used
 		decode_rm_specifier(state, rm_src, FALSE, FALSE, size);
 		
 		return;
@@ -365,44 +404,14 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 	}
 	
 	decode_unreachable_(state);
-}
-
-static void
-decode_inst_bitwise_ (pilot_decode_state *state, uint_fast16_t opcode)
-{
-	decode_not_implemented_();
 	return;
 }
 
-// scratchminer: currently here for editing
-
 static void
-decode_inst_ld_other_ (pilot_decode_state *state, uint_fast16_t opcode)
+decode_inst_other_ (pilot_decode_state *state, uint_fast16_t opcode)
 {
-	execute_control_word *core_op = &state->work_regs.core_op;
-	core_op->src2_add1 = FALSE;
-	core_op->src2_add_carry = FALSE;
-	core_op->src2_negate = FALSE;
-	core_op->flag_write_mask = 0;
-	core_op->flag_v_mode = FLAG_V_NORMAL;
-
-	// left operand is never fetched and is always zero
-	core_op->srcs[0].location = DATA_ZERO;
-	core_op->operation = ALU_OR;
-	
-	core_op->srcs[1].is_16bit = FALSE;
-	core_op->srcs[1].sign_extend = FALSE;
-	core_op->shifter_mode = SHIFTER_NONE;
-	
-	if ((opcode & 0xfe00) == 0x4000)
-	{
-		// ld/add C, imm
-		core_op->srcs[1].location = DATA_LATCH_IMM_0;
-		core_op->dest = DATA_REG__C;
-		return;
-	}
-	
-	decode_invalid_opcode_(state);
+	decode_not_implemented_();
+	return;
 }
 
 static void
@@ -410,23 +419,35 @@ decode_inst_ (pilot_decode_state *state)
 {
 	uint_fast16_t opcode = state->work_regs.imm_words[0];
 	
-	if (opcode & 0x0800)
+	if ((opcode & 0xf000) >= 0xe000)
 	{
 		// Branch instructions
 		decode_inst_branch_(state, opcode);
 	}
-	else if (opcode & 0x8000)
+	else if ((opcode & 0xf000) == 0xd000)
 	{
-		// Arithmetic/logic operations
+		// Bit operations
+		decode_inst_bit_(state, opcode);
+	}
+	else if ((opcode & 0xf000) == 0xc000)
+	{
+		// Two miscellaneous LD instructions
+		decode_inst_ld_other_(state, opcode);
+	}
+	else if ((opcode & 0x2000) == 0x2000)
+	{
+		// Arithmetic/logic instructions
 		decode_inst_arithlogic_(state, opcode);
 	}
-	else if ((opcode & 0x7000) > 0x4000)
+	else if ((opcode & 0x3000) == 0x1000)
 	{
+		// Main group of LD instructions
 		decode_inst_ld_group_(state, opcode);
 	}
-	else if ((opcode & 0x4200) == 0x4200)
+	else if ((opcode & 0x3000) == 0x0000)
 	{
-		decode_inst_stack_(state, opcode);
+		// Everything else
+		decode_inst_other_(state, opcode);
 	}
 }
 
@@ -490,8 +511,7 @@ pilot_decode_half2 (pilot_decode_state *state)
 	
 	if (state->decoding_phase == DECODER_HALF2_DISPATCH)
 	{
-		state->work_regs.inst_pc = state->pc;
-		state->work_regs.inst_k = state->k;
+		state->work_regs.inst_pgc = state->pgc;
 		bool *decoded_inst_semaph = &state->sys->interconnects.decoded_inst_semaph;
 		*decoded_inst_semaph = TRUE;
 		state->decoding_phase = DECODER_HALF1_DISPATCH_WAIT;

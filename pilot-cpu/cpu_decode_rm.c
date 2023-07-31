@@ -1,3 +1,5 @@
+// scratchminer: currently here for editing
+
 #include "cpu_decode.h"
 
 typedef bool (*rm_decode_func_t) (pilot_decode_state *, bool);
