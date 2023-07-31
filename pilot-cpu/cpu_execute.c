@@ -59,8 +59,8 @@ typedef struct {
 
 void execute_unreachable_ ();
 
-#define MAX_(a, b) \
-	((a) > (b) ? (a) : (b))
+#define ACCESS_REG_BITS_(state, r, size) fetch_data_(state, (size == SIZE_8_BIT ? DATA_REG_L0 : DATA_REG_P0) + r)
+#define READ_IMM_LATCH_(state, imm, size) (size == SIZE_24_BIT ? (((state->decoded_inst.imm_words[imm] & 0xff) << 16) | state->decoded_inst.imm_words[imm + 1]) : state->decoded_inst.imm_words[imm])
 
 static uint_fast24_t
 fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
@@ -71,7 +71,7 @@ fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 			return 0;
 		case DATA_SIZE:
 			{
-				data_size_specifier size = MAX_(state->mucode_decoded_buffer.srcs[0].size, state->mucode_decoded_buffer.srcs[1].size);
+				data_size_spec size = state->mucode_decoded_buffer.srcs[0].size;
 				if (size == SIZE_8_BIT) {
 					if (state->mucode_decoded_buffer.srcs[0].location == DATA_REG_SP || state->mucode_decoded_buffer.srcs[1].location == DATA_REG_SP)
 						return 2;
@@ -148,35 +148,33 @@ fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 		case DATA_LATCH_MEM_DATA:
 			return state->mem_data;
 		case DATA_LATCH_IMM_0:
-			return state->decoded_inst.imm_words[0];
+			return READ_IMM_LATCH_(state, 0, state->muxode_decoded_buffer.srcs[0].size);
 		case DATA_LATCH_IMM_1:
-			return state->decoded_inst.imm_words[1];
+			return READ_IMM_LATCH_(state, 1, state->muxode_decoded_buffer.srcs[0].size);
 		case DATA_LATCH_IMM_2:
-			return state->decoded_inst.imm_words[2];
-		case DATA_LATCH_IMM_HML:
-			return ((state->decoded_inst.imm_words[0] & 0xff) << 16) | state->decoded_inst.imm_words[1];
+			return READ_IMM_LATCH_(state, 2, state->muxode_decoded_buffer.srcs[0].size);
 		case DATA_LATCH_IMM_HML_RM:
 			return ((state->decoded_inst.imm_words[2] & 0xff) << 16) | state->decoded_inst.imm_words[1];
 		case DATA_LATCH_RM_1:
-			return  state->decoded_inst.imm_words[state->decoded_inst.rm2_offset];
+			return READ_IMM_LATCH_(state, state->decoded_inst.rm2_offset, state->muxode_decoded_buffer.srcs[0].size);
 		case DATA_LATCH_RM_2:
-			return state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1];
+			return READ_IMM_LATCH_(state, state->decoded_inst.rm2_offset + 1, state->muxode_decoded_buffer.srcs[0].size);
 		case DATA_LATCH_RM_HML:
 			return ((state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] & 0xff) << 16) | state->decoded_inst.imm_words[state->decoded_inst.rm2_offset];
 		case DATA_REG_IMM_0_8:
-			return state->sys->core.regs[(state->decoded_inst.imm_words[0] >> 8) & 0x7];
+			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[0] >> 8) & 0x7, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_REG_IMM_1_8:
-			return state->sys->core.regs[(state->decoded_inst.imm_words[1] >> 8) & 0x7];
+			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[1] >> 8) & 0x7, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_REG_IMM_1_2:
-			return state->sys->core.regs[(state->decoded_inst.imm_words[1] >> 2) & 0x7];
+			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[1] >> 2) & 0x7, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_REG_IMM_2_8:
-			return state->sys->core.regs[(state->decoded_inst.imm_words[2] >> 8) & 0x7];
+			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[2] >> 8) & 0x7, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_REG_RM_1_8:
-			return state->sys->core.regs[(state->decoded_inst.imm_words[state->decoded_inst.rm2_offset] >> 8) & 0x7];
+			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[state->decoded_inst.rm2_offset] >> 8) & 0x7, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_REG_RM_1_2:
-			return state->sys->core.regs[(state->decoded_inst.imm_words[state->decoded_inst.rm2_offset] >> 2) & 0x7];
+			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[state->decoded_inst.rm2_offset] >> 2) & 0x7, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_REG_RM_2_8:
-			return state->sys->core.regs[(state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] >> 8) & 0x7];
+			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] >> 8) & 0x7, state->mucode_decoded_buffer.srcs[0].size);
 		default:
 			execute_unreachable_();
 	}
@@ -315,7 +313,6 @@ write_data_ (pilot_execute_state *state, data_bus_specifier dest, uint_fast24_t 
 		case DATA_LATCH_IMM_0:
 		case DATA_LATCH_IMM_1:
 		case DATA_LATCH_IMM_2:
-		case DATA_LATCH_IMM_HML:
 		case DATA_LATCH_IMM_HML_RM:
 		case DATA_LATCH_RM_1:
 		case DATA_LATCH_RM_2:

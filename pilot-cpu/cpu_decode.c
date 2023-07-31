@@ -92,9 +92,7 @@ void decode_invalid_opcode_ (pilot_decode_state *state);
 // NOTE: Special RM specifiers for certain instructions are not checked here and need to be special-case evaluated beforehand.
 bool is_rm_valid_ (rm_spec rm);
 
-bool decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool src_is_left, bool is_16bit);
-
-bool decode_zm_specifier (pilot_decode_state *state, zm_spec zm, bool is_dest, bool is_16bit);
+bool decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool src_is_left, data_size_spec size);
 
 static inline void
 decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
@@ -105,65 +103,67 @@ decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
 		decode_not_implemented_();
 		return;
 	}
-	if ((opcode & 0x0400) == 0x0000)
+	if ((opcode & 0xffe0) == 0xfe00)
 	{
-		// JR, CALLR
+		// REPI
 		decode_not_implemented_();
 		return;
 	}
-
-	switch (opcode & 0x0300)
+	if (opcode & 0xf800 == 0xf000)
 	{
-		case 0x0000:
-			switch (opcode & 0x00e0)
-			{
-				case 0x0000:
-					// JP, CALL
-					decode_not_implemented_();
-					return;
-				case 0x0080:
-					// JPD, CALLD
-					decode_not_implemented_();
-					return;
-				case 0x00c0:
-					// JPF, CALLF indirect mem24
-					decode_not_implemented_();
-					return;
-				default:
-					break;
-			}
-		case 0x0100:
-			if ((opcode & 0x00ff) == 0x0000)
-			{
-				// JRL, CALLRL pcr15
-				decode_not_implemented_();
-				return;
-			}
-			break;
-		case 0x0200:
-			// JPF, CALLF imm24
+		if (!(opcode & 0xff))
+		{
+			// REPR
 			decode_not_implemented_();
 			return;
-		case 0x0300:
-			switch (opcode & 0x00ff)
+		}
+		else if (opcode & 0x80)
+		{
+			// DJNZ
+			decode_not_implemented_();
+			return;
+		}
+		else
+		{
+			decode_invalid_opcode_(state);
+			return;
+		}
+	}
+
+	switch (opcode & 0x0700)
+	{
+		case 0x0000:
+			// JP, JR.L
+			decode_not_implemented_();
+			return;
+		case 0x0100:
+			// CALL, CR.L
+			decode_not_implemented_();
+			return;
+		case 0x0200:
+		{
+			switch (opcode & 0x01c0)
 			{
 				case 0x0000:
-					// RET
+					// JP rm24
 					decode_not_implemented_();
 					return;
-				case 0x0080:
-					// RETF
+				case 0x0040:
+					// JEA
 					decode_not_implemented_();
+					return;
+				case 0x0100:
+					// CALL rm24
+					decode_not_implemented();
+					return;
+				case 0x0140:
+					// CEA
+					decode_not_implemented();
 					return;
 				default:
-					if ((opcode & 0xff1f) == 0xef10)
-					{
-						// RETI
-						decode_not_implemented_();
-						return;
-					}
 					break;
 			}
+		}
 	}
 
 	decode_invalid_opcode_(state);
@@ -172,101 +172,134 @@ decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
 static inline void
 decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 {
-	uint_fast8_t operation = (opcode & 0x7000) >> 12;
-	bool reg_16bit = (opcode & 0x0400) != 0;
+	uint_fast8_t operation = ((opcode & 0x00c0) >> 6) | ((opcode & 0x1800) >> 9);
+	data_size_spec size = ((opcode & 0x3000) >> 14);
 	execute_control_word *core_op = &state->work_regs.core_op;
 	data_bus_specifier reg_select;
+	bool uses_imm = FALSE;_
 	
 	core_op->shifter_mode = SHIFTER_NONE;
 	core_op->src2_add1 = FALSE;
 	core_op->flag_v_mode = FLAG_V_NORMAL;
 	
-	// Decode reg_select bit
-	if (reg_16bit)
-	{
-		reg_select = !(opcode & 0x0100) ? DATA_REG_AB : DATA_REG_HL;
-	}
-	else
-	{
-		reg_select = !(opcode & 0x0100) ? DATA_REG__A : DATA_REG__B;
-	}
-	
 	// Decode core_op operation
 	switch (operation)
 	{
-		case 0: case 1: case 2: case 3: case 7:
-			// ADD, ADC, SUB, SBC
+		case 0: case 1: case 2: case 3: case 8: case 9: case 10: case 11:
+			// ADD, ADX, SUB, SBX
 			core_op->operation = ALU_ADD;
-			break;
-		case 4:
-			// AND
-			core_op->operation = ALU_AND;
-			break;
-		case 5:
-			// XOR
-			core_op->operation = ALU_XOR;
-			break;
-		case 6:
-			// OR
-			core_op->operation = ALU_OR;
-			break;
-		default:
-			decode_unreachable_();
-	}
-	
-	// Decode core_op flags
-	switch (operation)
-	{
-		case 0: case 1: case 2: case 3:
-			// ADD, ADC, SUB, SBC
 			core_op->src2_add_carry = operation & 1;
 			core_op->src2_negate = operation & 2;
-			core_op->flag_write_mask = F_NEG | F_ZERO | F_HCARRY | F_DS_ADJ | F_OVRFLW | F_CARRY;
+			core_op->flag_write_mask = F_NEG | F_ZERO | F_OVERFLOW | F_CARRY | F_EXTEND;
 			break;
-		
-		case 4: case 5: case 6:
-			// AND, XOR, OR
+		case 4: case 12:
+			// AND
+			core_op->operation = ALU_AND;
 			core_op->src2_add_carry = FALSE;
 			core_op->src2_negate = FALSE;
-			core_op->flag_write_mask = F_NEG | F_ZERO | F_DS_ADJ | F_OVRFLW;
+			core_op->flag_write_mask = F_NEG | F_ZERO | F_OVERFLOW | F_CARRY;
+			break;
+		case 5: case 13:
+			// XOR
+			core_op->operation = ALU_XOR;
+			core_op->src2_add_carry = FALSE;
+			core_op->src2_negate = FALSE;
+			core_op->flag_write_mask = F_NEG | F_ZERO | F_OVERFLOW | F_CARRY;
+			break;
+		case 6: case 14:
+			// OR
+			core_op->operation = ALU_OR;
+			core_op->src2_add_carry = FALSE;
+			core_op->src2_negate = FALSE;
+			core_op->flag_write_mask = F_NEG | F_ZERO | F_OVERFLOW | F_CARRY;
 			break;
 		case 7:
 			// CP
+			core_op->operation = ALU_ADD;
 			core_op->src2_add_carry = FALSE;
 			core_op->src2_negate = TRUE;
-			core_op->flag_write_mask = F_NEG | F_ZERO | F_HCARRY | F_DS_ADJ |F_OVRFLW | F_CARRY;
+			core_op->flag_write_mask = F_NEG | F_ZERO | F_OVERFLOW | F_CARRY;
 			break;
+		case 15:
+		{
+			uses_imm = TRUE;
+			operation = (opcode & 0x0700) >> 16;
+			switch(operation)
+			{
+				case 0: case 1: case 2: case 3:
+					// ADD, ADX, SUB, SBX
+					core_op->operation = ALU_ADD;
+					core_op->src2_add_carry = operation & 1;
+					core_op->src2_negate = operation & 2;
+					core_op->flag_write_mask = F_NEG | F_ZERO | F_OVERFLOW | F_CARRY | F_EXTEND;
+					break;
+				case 4:
+					// AND
+					core_op->operation = ALU_AND;
+					core_op->src2_add_carry = FALSE;
+					core_op->src2_negate = FALSE;
+					core_op->flag_write_mask = F_NEG | F_ZERO | F_OVERFLOW | F_CARRY;
+					break;
+				case 5:
+					// XOR
+					core_op->operation = ALU_XOR;
+					core_op->src2_add_carry = FALSE;
+					core_op->src2_negate = FALSE;
+					core_op->flag_write_mask = F_NEG | F_ZERO | F_OVERFLOW | F_CARRY;
+					break;
+				case 6:
+					// OR
+					core_op->operation = ALU_OR;
+					core_op->src2_add_carry = FALSE;
+					core_op->src2_negate = FALSE;
+					core_op->flag_write_mask = F_NEG | F_ZERO | F_OVERFLOW | F_CARRY;
+					break;
+				case 7:
+					// CP
+					core_op->operation = ALU_ADD;
+					core_op->src2_add_carry = FALSE;
+				core_op->src2_negate = TRUE;
+				core_op->flag_write_mask = F_NEG | F_ZERO | F_OVERFLOW | F_CARRY;
+				break;
+			default:
+				decode_unreachable_();
+			}
+		}
 		default:
 			decode_unreachable_();
 	}
 	
 	// Decode operands
-	if ((opcode & 0x02c0) == 0x0200)
+	if (!uses_imm)
 	{
-		// from src or to dest
-		bool rm_is_dest = (opcode & 0x0020) != 0;
-		rm_spec rm = opcode & 0x001F;
-		decode_rm_specifier(state, rm, rm_is_dest, rm_is_dest, reg_16bit);
+		// from RM src
+		rm_spec rm = opcode & 0x003F;
+		decode_rm_specifier(state, rm, FALSE, FALSE, size);
 
-		state->work_regs.core_op.srcs[!rm_is_dest].location = reg_select;
-		state->work_regs.core_op.srcs[!rm_is_dest].is_16bit = reg_16bit;
-		state->work_regs.core_op.srcs[!rm_is_dest].sign_extend = FALSE;
+		state->work_regs.core_op.srcs[1].location = reg_select;
+		state->work_regs.core_op.srcs[1].size = size;
+		state->work_regs.core_op.srcs[1].sign_extend = FALSE;
+		
+		state->work_regs.core_op.srcs[0].location = DATA_LATCH_IMM_0_8;
+		state->work_regs.core_op.srcs[0].size = size;
+		state->work_regs.core_op.srcs[0].sign_extend = FALSE;
 		return;
 	}
-	if ((opcode & 0x0200) == 0x0000)
+	else
 	{
-		// from immediate
-		state->work_regs.core_op.srcs[0].location = reg_select;
-		state->work_regs.core_op.srcs[0].is_16bit = reg_16bit;
+		// from immediate src
+		rm_spec rm = opcode & 0x003F;
+		decode_rm_specifier(state, rm, TRUE, TRUE, size);
+		state->work_regs.core_op.srcs[0].size = size;
 		state->work_regs.core_op.srcs[0].sign_extend = FALSE;
 
-		state->work_regs.core_op.srcs[1].location = DATA_LATCH_IMM_0;
-		state->work_regs.core_op.srcs[1].is_16bit = FALSE;
-		state->work_regs.core_op.srcs[1].sign_extend = reg_16bit && (operation & 4);
+		state->work_regs.core_op.srcs[1].location = DATA_LATCH_IMM_1;
+		state->work_regs.core_op.srcs[1].size = size;
+		state->work_regs.core_op.srcs[1].sign_extend = FALSE;
 		
 		if (operation != 7)
 		{
-			state->work_regs.core_op.dest = reg_select;
+			state->work_regs.core_op.dest = state->work_regs.core_op.srcs[0];
 		}
 		return;
 	}
@@ -278,7 +311,7 @@ static void
 decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 {
 	execute_control_word *core_op = &state->work_regs.core_op;
-	bool is_16bit = (opcode & 0x0400) != 0;
+	data_size_spec size = ((opcode & 0x3000) >> 14);
 	core_op->src2_add1 = FALSE;
 	core_op->src2_add_carry = FALSE;
 	core_op->src2_negate = FALSE;
@@ -287,9 +320,12 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 
 	// left operand is never fetched and is always zero
 	core_op->srcs[0].location = DATA_ZERO;
+	core_op->srcs[0].size = size;
 	core_op->operation = ALU_OR;
 	core_op->shifter_mode = SHIFTER_NONE;
 
+	// currently up to here with rewriting
+	
 	if (opcode & 0x8800)
 	{
 		decode_unreachable_();

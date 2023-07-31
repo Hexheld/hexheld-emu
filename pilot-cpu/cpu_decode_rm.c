@@ -44,7 +44,7 @@ rm_requires_mem_fetch_ (rm_spec rm)
 // - Reads additional immediate value if needed
 // - Sets alu_src_control fields for core_op
 bool
-decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool src_is_left, bool is_16bit)
+decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool src_is_left, data_size_spec size)
 {
 	execute_control_word *core_op = &state->work_regs.core_op;
 	mucode_entry_spec *run_mucode;
