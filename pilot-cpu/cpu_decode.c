@@ -173,7 +173,7 @@ static inline void
 decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 {
 	uint_fast8_t operation = ((opcode & 0x00c0) >> 6) | ((opcode & 0x1800) >> 9);
-	data_size_spec size = ((opcode & 0x3000) >> 14);
+	data_size_spec size = ((opcode & 0xc000) >> 14);
 	execute_control_word *core_op = &state->work_regs.core_op;
 	data_bus_specifier reg_select;
 	bool uses_imm = FALSE;_
@@ -311,7 +311,7 @@ static void
 decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 {
 	execute_control_word *core_op = &state->work_regs.core_op;
-	data_size_spec size = ((opcode & 0x3000) >> 14);
+	data_size_spec size = ((opcode & 0xc000) >> 14);
 	core_op->src2_add1 = FALSE;
 	core_op->src2_add_carry = FALSE;
 	core_op->src2_negate = FALSE;
