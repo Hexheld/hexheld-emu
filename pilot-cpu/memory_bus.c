@@ -15,7 +15,7 @@
 bool
 mem_read (Pilot_system *sys)
 {
-	uint_fast24_t addr = sys->memctl.addr_reg;
+	uint_fast32_t addr = sys->memctl.addr_reg;
 	if (addr <= WRAM_END)
 	{
 		// try to read WRAM
@@ -40,7 +40,7 @@ mem_read (Pilot_system *sys)
 	{
 		// sprite attribute RAM
 	}
-	else if (HCIO_START <= addr <= HCIO_END)
+	else if (HCIO_START <= addr && addr <= HCIO_END)
 	{
 		// memory mapped I/O
 	}
@@ -66,7 +66,7 @@ mem_read (Pilot_system *sys)
  * 
  */
 Pilot_memctl_state
-Pilot_mem_addr_read_assert (Pilot_system *sys, uint_fast24_t addr)
+Pilot_mem_addr_read_assert (Pilot_system *sys, uint_fast32_t addr)
 {
 	if (sys->memctl.state == MCTL_READY)
 	{
@@ -79,7 +79,7 @@ Pilot_mem_addr_read_assert (Pilot_system *sys, uint_fast24_t addr)
 }
 
 Pilot_memctl_state
-Pilot_mem_addr_write_assert (Pilot_system *sys, uint_fast24_t addr, uint16_t data)
+Pilot_mem_addr_write_assert (Pilot_system *sys, uint_fast32_t addr, uint16_t data)
 {
 	if (sys->memctl.state == MCTL_READY)
 	{

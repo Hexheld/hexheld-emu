@@ -4,11 +4,11 @@
 #include "types.h"
 
 typedef struct {
-	uint_fast24_t regs[8];
+	uint_fast32_t regs[8];
 	uint16_t wf;
 
 	// Program countet
-	uint_fast24_t pgc;
+	uint_fast32_t pgc;
 	
 	// Internal states
 	uint8_t repi;

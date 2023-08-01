@@ -300,7 +300,7 @@ typedef struct
 	uint_fast16_t imm_words[5];
 	
 	// PGC for this instruction
-	uint_fast24_t inst_pgc;
+	uint_fast32_t inst_pgc;
 	
 	// Sequencer control
 	// override_op: if not MU_NONE, overrides the entire execution with itself
