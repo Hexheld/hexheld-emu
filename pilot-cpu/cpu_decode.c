@@ -85,11 +85,8 @@
 // Placeholder
 void decode_not_implemented_ ();
 
-// Runs the invalid opcode exception reporting.
-void decode_invalid_opcode_ (pilot_decode_state *state);
-
 // Decodes an RM specifier.
-bool decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool src_is_left, data_size_spec size);
+void decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool src_is_left, data_size_spec size);
 
 static inline void
 decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
@@ -314,11 +311,8 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 	if (!uses_imm)
 	{
 		// from RM src
-		rm_spec rm = opcode & 0x003F;
+		rm_spec rm = opcode & 0x003f;
 		decode_rm_specifier(state, rm, FALSE, FALSE, size);
-
-		state->work_regs.core_op.srcs[1].location = reg_select;
-		state->work_regs.core_op.srcs[1].size = size;
 		state->work_regs.core_op.srcs[1].sign_extend = FALSE;
 		
 		state->work_regs.core_op.srcs[0].location = DATA_LATCH_IMM_0_8;
@@ -329,18 +323,17 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 	else
 	{
 		// from immediate src
-		rm_spec rm = opcode & 0x003F;
+		rm_spec rm = opcode & 0x003f;
 		decode_rm_specifier(state, rm, TRUE, TRUE, size);
-		state->work_regs.core_op.srcs[0].size = size;
 		state->work_regs.core_op.srcs[0].sign_extend = FALSE;
 		
 		state->work_regs.core_op.srcs[1].location = DATA_LATCH_IMM_1;
 		state->work_regs.core_op.srcs[1].size = size;
 		state->work_regs.core_op.srcs[1].sign_extend = FALSE;
 		
-		if (operation != 7)
+		if (operation == 7)
 		{
-			state->work_regs.core_op.dest = state->work_regs.core_op.srcs[0];
+			state->work_regs.core_op.dest = DATA_ZERO;
 		}
 		return;
 	}
@@ -360,7 +353,7 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 	// left operand is never fetched and is always zero
 	core_op->srcs[0].location = DATA_ZERO;
 	core_op->srcs[0].size = size;
-	core_op->srcs[1].size = size;
+	
 	core_op->operation = ALU_OR;
 	core_op->shifter_mode = SHIFTER_NONE;
 	
@@ -417,6 +410,7 @@ decode_inst_other_ (pilot_decode_state *state, uint_fast16_t opcode)
 static void
 decode_inst_ (pilot_decode_state *state)
 {
+	state->rm_ops = 0;
 	uint_fast16_t opcode = state->work_regs.imm_words[0];
 	
 	if ((opcode & 0xf000) >= 0xe000)
@@ -452,7 +446,7 @@ decode_inst_ (pilot_decode_state *state)
 }
 
 void
-pilot_queue_read_word (pilot_decode_state *state)
+decode_queue_read_word (pilot_decode_state *state)
 {
 	state->inst_length++;
 	state->words_to_read++;

@@ -104,6 +104,7 @@ typedef enum
 	MU_IND_IMM_WITH_BITS,
 	
 	MU_IND_REG,
+	MU_IND_REG_POST_AUTO,
 	MU_IND_REG_AUTO,
 	MU_IND_REG_WITH_IMM,
 	MU_IND_REG_WITH_BITS,
@@ -119,7 +120,8 @@ typedef enum
 typedef struct
 {
 	mucode_entry_idx entry_idx;
-	// bit 3 is the sign extend bit
+	// bit 3: sign extend
+	// bit 4: RM operand number
 	uint_fast8_t reg_select;
 	data_size_spec size;
 	bool is_write;
@@ -176,6 +178,10 @@ typedef enum
 	DATA_LATCH_IMM_1,
 	DATA_LATCH_IMM_2,
 	DATA_LATCH_IMM_HML_RM,
+	
+	// Short Form Immediate bits of each RM operand
+	DATA_LATCH_SFI_1,
+	DATA_LATCH_SFI_2,
 	
 	// Second RM operand latches
 	DATA_LATCH_RM_1,
@@ -277,7 +283,9 @@ typedef struct
 		// Data is not latched; whatever was left in MDR is what's written back
 		MEM_WRITE_FROM_MDR,
 	} mem_write_ctl;
-	bool mem_16bit;
+
+	// The Pilot has a 24-bit internal data bus, but this is reduced by glue logic to 16 bits for any accesses outside the CPU.
+	bool mem_size;
 } execute_control_word;
 
 typedef struct

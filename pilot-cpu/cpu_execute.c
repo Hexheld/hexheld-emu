@@ -148,17 +148,21 @@ fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 		case DATA_LATCH_MEM_DATA:
 			return state->mem_data;
 		case DATA_LATCH_IMM_0:
-			return READ_IMM_LATCH_(state, 0, state->muxode_decoded_buffer.srcs[0].size);
+			return READ_IMM_LATCH_(state, 0, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_LATCH_IMM_1:
-			return READ_IMM_LATCH_(state, 1, state->muxode_decoded_buffer.srcs[0].size);
+			return READ_IMM_LATCH_(state, 1, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_LATCH_IMM_2:
-			return READ_IMM_LATCH_(state, 2, state->muxode_decoded_buffer.srcs[0].size);
+			return READ_IMM_LATCH_(state, 2, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_LATCH_IMM_HML_RM:
 			return ((state->decoded_inst.imm_words[2] & 0xff) << 16) | state->decoded_inst.imm_words[1];
+		case DATA_LATCH_SFI_1:
+			return (state->decoded_inst.imm_words[0] >> 2) & 0x000f;
+		case DATA_LATCH_SFI_2:
+			return (state->decoded_inst.imm_words[0] >> 8) & 0x000f;
 		case DATA_LATCH_RM_1:
-			return READ_IMM_LATCH_(state, state->decoded_inst.rm2_offset, state->muxode_decoded_buffer.srcs[0].size);
+			return READ_IMM_LATCH_(state, state->decoded_inst.rm2_offset, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_LATCH_RM_2:
-			return READ_IMM_LATCH_(state, state->decoded_inst.rm2_offset + 1, state->muxode_decoded_buffer.srcs[0].size);
+			return READ_IMM_LATCH_(state, state->decoded_inst.rm2_offset + 1, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_LATCH_RM_HML:
 			return ((state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] & 0xff) << 16) | state->decoded_inst.imm_words[state->decoded_inst.rm2_offset];
 		case DATA_REG_IMM_0_8:
@@ -168,13 +172,30 @@ fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 		case DATA_REG_IMM_1_2:
 			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[1] >> 2) & 0x7, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_REG_IMM_2_8:
-			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[2] >> 8) & 0x7, state->mucode_decoded_buffer.srcs[0].size);
+		{
+			{
+			if (state->decoded_inst.imm_words[2] >= 0xc000) 
+			{
+				decode_invalid_opcode_(decode_state);
+				return 0;
+			}
+			state->mucode_decoded_buffer.srcs[1].sign_extend = ((state->decoded_inst.imm_words[2] & 0x0800) != 0);
+			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[2] >> 8) & 0x7, state->decoded_inst.imm_words[2] >> 14);
+		}
 		case DATA_REG_RM_1_8:
 			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[state->decoded_inst.rm2_offset] >> 8) & 0x7, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_REG_RM_1_2:
 			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[state->decoded_inst.rm2_offset] >> 2) & 0x7, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_REG_RM_2_8:
-			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] >> 8) & 0x7, state->mucode_decoded_buffer.srcs[0].size);
+		{
+			if (state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] >= 0xc000) 
+			{
+				decode_invalid_opcode_(decode_state);
+				return 0;
+			}
+			state->mucode_decoded_buffer.srcs[1].sign_extend = ((state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] & 0x0800) != 0);
+			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] >> 8) & 0x7, state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] >> 14);
+		}
 		default:
 			execute_unreachable_();
 	}
@@ -302,18 +323,18 @@ write_data_ (pilot_execute_state *state, data_bus_specifier dest, uint_fast24_t 
 			state->sys->core.regs[(state->decoded_inst.imm_words[1] >> 8) & 0x7] = *src;
 		case DATA_REG_IMM_1_2:
 			state->sys->core.regs[(state->decoded_inst.imm_words[1] >> 2) & 0x7] = *src;
-		case DATA_REG_IMM_2_8:
-			state->sys->core.regs[(state->decoded_inst.imm_words[2] >> 8) & 0x7] = *src;
 		case DATA_REG_RM_1_8:
 			state->sys->core.regs[(state->decoded_inst.imm_words[state->decoded_inst.rm2_offset] >> 8) & 0x7] = *src;
 		case DATA_REG_RM_1_2:
 			 state->sys->core.regs[(state->decoded_inst.imm_words[state->decoded_inst.rm2_offset] >> 2) & 0x7] = *src;
+		case DATA_REG_IMM_2_8:
 		case DATA_REG_RM_2_8:
-			state->sys->core.regs[(state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] >> 8) & 0x7] = *src;
 		case DATA_LATCH_IMM_0:
 		case DATA_LATCH_IMM_1:
 		case DATA_LATCH_IMM_2:
 		case DATA_LATCH_IMM_HML_RM:
+		case DATA_LATCH_SFI_1:
+		case DATA_LATCH_SFI_2:
 		case DATA_LATCH_RM_1:
 		case DATA_LATCH_RM_2:
 		case DATA_LATCH_RM_HML:

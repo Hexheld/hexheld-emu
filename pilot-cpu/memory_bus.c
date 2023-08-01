@@ -46,7 +46,7 @@ mem_read (Pilot_system *sys)
 	}
 	else if (addr <= HRAM_END)
 	{
-		sys->memctl.data_reg_in = (uint16_t)sys->hram[addr] + ((uint16_t)sys->hram[addr + 1] << 8);
+		sys->memctl.data_reg_in = sys->hram[addr] | (sys->hram[addr + 1] << 8);
 		return TRUE;
 	}
 	
