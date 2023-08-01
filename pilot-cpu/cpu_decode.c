@@ -186,14 +186,13 @@ decode_inst_ld_other_ (pilot_decode_state *state, uint_fast16_t opcode)
 	core_op->srcs[0].size = SIZE_24_BIT;
 	core_op->operation = ALU_OR;
 
-	core_op->srcs[1].location = DATA_REG_IMM_0;
-
 	core_op->dest = DATA_REG_IMM_0_8;
 	core_op->shifter_mode = SHIFTER_NONE;
 	
 	if ((opcode & 0x0800) == 0x0000)
 	{
 		// LD.P r24, hml
+		core_op->srcs[1].location = DATA_LATCH_IMM_HML;
 		core_op->srcs[1].size = SIZE_24_BIT;
 		core_op->srcs[1].sign_extend = FALSE;
 		return;
@@ -201,6 +200,7 @@ decode_inst_ld_other_ (pilot_decode_state *state, uint_fast16_t opcode)
 	else
 	{
 		// LDQ
+		core_op->srcs[1].location = DATA_LATCH_IMM_0;
 		core_op->srcs[1].size = SIZE_8_BIT;
 		core_op->srcs[1].sign_extend = TRUE;
 		return;
@@ -213,8 +213,8 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 	uint_fast8_t operation = ((opcode & 0x00c0) >> 6) | ((opcode & 0x1800) >> 9);
 	data_size_spec size = ((opcode & 0xc000) >> 14);
 	execute_control_word *core_op = &state->work_regs.core_op;
-	data_bus_specifier reg_select;
-	bool uses_imm = FALSE;_
+	
+	bool uses_imm = FALSE;
 	
 	core_op->shifter_mode = SHIFTER_NONE;
 	core_op->src2_add1 = FALSE;
@@ -315,7 +315,7 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 		decode_rm_specifier(state, rm, FALSE, FALSE, size);
 		state->work_regs.core_op.srcs[1].sign_extend = FALSE;
 		
-		state->work_regs.core_op.srcs[0].location = DATA_LATCH_IMM_0_8;
+		state->work_regs.core_op.srcs[0].location = DATA_REG_IMM_0_8;
 		state->work_regs.core_op.srcs[0].size = size;
 		state->work_regs.core_op.srcs[0].sign_extend = FALSE;
 		return;
@@ -361,7 +361,6 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 	{
 		// one RM specifier
 		rm_spec rm_src = opcode & 0x3f;
-		data_bus_specifier reg;
 
 		core_op->srcs[0].size = SIZE_24_BIT;
 		core_op->dest = DATA_REG_IMM_0_8;

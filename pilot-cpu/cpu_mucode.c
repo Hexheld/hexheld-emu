@@ -157,9 +157,9 @@ static mucode_entry
 ind_2cyc_reg_withbits_ (mucode_entry_spec spec)
 {
 	mucode_entry prg = base_entry_(spec);
-	prg.operation.srcs[0].location = (!(spec.reg_select & 0x10)) ? DATA_LATCH_IMM_1_2 : DATA_REG_RM_1_2;
+	prg.operation.srcs[0].location = (!(spec.reg_select & 0x10)) ? DATA_REG_IMM_1_2 : DATA_REG_RM_1_2;
 	
-	prg.operation.srcs[1].location = (!(spec.reg_select & 0x10)) ? DATA_LATCH_IMM_1_8 : DATA_REG_RM_1_8;
+	prg.operation.srcs[1].location = (!(spec.reg_select & 0x10)) ? DATA_REG_IMM_1_8 : DATA_REG_RM_1_8;
 	prg.operation.srcs[1].sign_extend = spec.reg_select & 0x8;
 	
 	prg.operation.src2_add1 = FALSE;
@@ -180,7 +180,7 @@ ind_2cyc_pgc_withimm_ (mucode_entry_spec spec)
 	prg.operation.srcs[0].location = DATA_REG_PGC;
 	
 	prg.operation.srcs[1].location = DATA_LATCH_IMM_0;
-	prg.operation.srcs[1].size = DATA_8_BIT;
+	prg.operation.srcs[1].size = SIZE_8_BIT;
 	prg.operation.srcs[1].sign_extend = TRUE;
 	
 	prg.operation.src2_add1 = FALSE;

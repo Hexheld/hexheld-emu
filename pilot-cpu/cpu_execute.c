@@ -13,12 +13,12 @@ typedef struct {
 	execute_control_word mucode_decoded_buffer;
 	execute_control_word *control;
 	
-	uint_fast24_t alu_input_latches[2];
-	uint_fast24_t alu_output_latch;
+	uint_fast32_t alu_input_latches[2];
+	uint_fast32_t alu_output_latch;
 	bool alu_shifter_carry_bit;
 	
 	// Memory address and data registers for requesting memory accesses
-	uint_fast24_t mem_addr;
+	uint_fast32_t mem_addr;
 	uint16_t mem_data;
 	
 	// When reading memory, this flag will be high until the memory access has been completed.
@@ -62,7 +62,7 @@ void execute_unreachable_ ();
 #define ACCESS_REG_BITS_(state, r, size) fetch_data_(state, (size == SIZE_8_BIT ? DATA_REG_L0 : DATA_REG_P0) + r)
 #define READ_IMM_LATCH_(state, imm, size) (size == SIZE_24_BIT ? (((state->decoded_inst.imm_words[imm] & 0xff) << 16) | state->decoded_inst.imm_words[imm + 1]) : state->decoded_inst.imm_words[imm])
 
-static uint_fast24_t
+static uint_fast32_t
 fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 {
 	switch (src)
@@ -153,6 +153,8 @@ fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 			return READ_IMM_LATCH_(state, 1, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_LATCH_IMM_2:
 			return READ_IMM_LATCH_(state, 2, state->mucode_decoded_buffer.srcs[0].size);
+		case DATA_LATCH_IMM_HML:
+			return ((state->decoded_inst.imm_words[0] & 0xff) << 16) | state->decoded_inst.imm_words[1];
 		case DATA_LATCH_IMM_HML_RM:
 			return ((state->decoded_inst.imm_words[2] & 0xff) << 16) | state->decoded_inst.imm_words[1];
 		case DATA_LATCH_SFI_1:
@@ -173,10 +175,9 @@ fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 			return ACCESS_REG_BITS_(state, (state->decoded_inst.imm_words[1] >> 2) & 0x7, state->mucode_decoded_buffer.srcs[0].size);
 		case DATA_REG_IMM_2_8:
 		{
-			{
 			if (state->decoded_inst.imm_words[2] >= 0xc000) 
 			{
-				decode_invalid_opcode_(decode_state);
+				decode_invalid_opcode_(decode_state_);
 				return 0;
 			}
 			state->mucode_decoded_buffer.srcs[1].sign_extend = ((state->decoded_inst.imm_words[2] & 0x0800) != 0);
@@ -190,7 +191,7 @@ fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 		{
 			if (state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] >= 0xc000) 
 			{
-				decode_invalid_opcode_(decode_state);
+				decode_invalid_opcode_(decode_state_);
 				return 0;
 			}
 			state->mucode_decoded_buffer.srcs[1].sign_extend = ((state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] & 0x0800) != 0);
@@ -202,7 +203,7 @@ fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 }
 
 static void
-write_data_ (pilot_execute_state *state, data_bus_specifier dest, uint_fast24_t *src)
+write_data_ (pilot_execute_state *state, data_bus_specifier dest, uint_fast32_t *src)
 {
 	switch (dest)
 	{
@@ -332,6 +333,7 @@ write_data_ (pilot_execute_state *state, data_bus_specifier dest, uint_fast24_t 
 		case DATA_LATCH_IMM_0:
 		case DATA_LATCH_IMM_1:
 		case DATA_LATCH_IMM_2:
+		case DATA_LATCH_IMM_HML:
 		case DATA_LATCH_IMM_HML_RM:
 		case DATA_LATCH_SFI_1:
 		case DATA_LATCH_SFI_2:
@@ -510,13 +512,17 @@ alu_operate_shifter_ (pilot_execute_state *state, uint16_t operand)
 		case SHIFTER_RIGHT_BARREL:
 			state->alu_shifter_carry_bit = lsb_bit ^ state->control->invert_carries;
 			operand >>= 1;
-			if (state->control->srcs[1].is_16bit)
+			if (state->control->srcs[1].size == SIZE_8_BIT)
+			{
+				operand |= inject_bit << 7;
+			}
+			else if (state->control->srcs[1].size == SIZE_16_BIT)
 			{
 				operand |= inject_bit << 15;
 			}
 			else
 			{
-				operand |= inject_bit << 7;
+				operand |= inject_bit << 23;
 			}
 			break;
 		default:
@@ -527,7 +533,7 @@ alu_operate_shifter_ (pilot_execute_state *state, uint16_t operand)
 }
 
 static inline uint8_t
-alu_modify_flags_ (pilot_execute_state *state, uint8_t flags, uint_fast24_t operands[2], uint_fast24_t result, uint_fast24_t carries)
+alu_modify_flags_ (pilot_execute_state *state, uint8_t flags, uint_fast32_t operands[2], uint_fast32_t result, uint_fast32_t carries)
 {
 	bool alu_carry;
 	bool alu_overflow;
@@ -535,7 +541,7 @@ alu_modify_flags_ (pilot_execute_state *state, uint8_t flags, uint_fast24_t oper
 	bool alu_neg;
 	uint8_t flag_source_word = 0;
 	
-	uint_fast24_t alu_parity = result;
+	uint_fast32_t alu_parity = result;
 	alu_parity = alu_parity ^ alu_parity >> 4;
 	alu_parity = alu_parity ^ alu_parity >> 2;
 	alu_parity = alu_parity ^ alu_parity >> 1;
@@ -607,7 +613,8 @@ static void
 execute_half2_result_latch_ (pilot_execute_state *state)
 {
 	int i;
-	uint_fast24_t operands[2];
+	uint_fast32_t operands[2];
+	uint_fast32_t carries;
 	
 	alu_src_control *src2 = &state->control->srcs[1];
 	uint8_t flags = fetch_data_(state, DATA_REG__F);
@@ -683,10 +690,11 @@ execute_half2_result_latch_ (pilot_execute_state *state)
 			execute_unreachable_();
 	}
 	
-	if ((&state->control->srcs[0].size == SIZE_8_BIT) && (flags & F_DECIMAL) && (carries & 0x08))
+	if ((state->control->srcs[0].size == SIZE_8_BIT) && (flags & F_DECIMAL) && (carries & 0x08))
 	{
 		state->alu_output_latch = state->alu_output_latch + 0x10;
 		carries = (carries & 0x0f) | ((operands[0] ^ operands[1] ^ state->alu_output_latch) & 0xf0);
+	}
 	
 	if (state->control->operation != ALU_OFF)
 	{
@@ -699,8 +707,6 @@ execute_half2_result_latch_ (pilot_execute_state *state)
 static void
 execute_half2_mem_prepare_ (pilot_execute_state *state)
 {
-	bool carry_flag = (fetch_data_(state, DATA_REG__F) & F_CARRY) != 0;
-	
 	if (state->control->mem_latch_ctl == MEM_LATCH_HALF2)
 	{
 		state->mem_addr = state->alu_output_latch;

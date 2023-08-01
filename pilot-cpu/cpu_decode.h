@@ -8,8 +8,8 @@ typedef struct {
 	Pilot_system *sys;
 	
 	inst_decoded_flags work_regs;
-	uint16_t pc;
-	uint8_t k;
+	uint32_t pgc;
+	
 	uint8_t inst_length;
 	uint8_t words_to_read;
 	enum
@@ -25,6 +25,8 @@ typedef struct {
 	// Number of RM operands in current instruction
 	uint_fast8_t rm_ops;
 } pilot_decode_state;
+
+extern pilot_decode_state *decode_state_;
 
 void decode_unreachable_ ();
 

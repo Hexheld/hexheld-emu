@@ -18,19 +18,19 @@ typedef struct {
 const enum
 {
 	// Extend carry/borrow
-	F_EXTEND  = 1 << 0,
+	F_EXTEND   = 1 << 0,
 	// Decimal flag
-	F_DECIMAL = 1 << 1,
+	F_DECIMAL  = 1 << 1,
 	// Overflow/parity flag
-	F_OVRFLOW = 1 << 2,
+	F_OVERFLOW = 1 << 2,
 	// Carry/borrow flag
-	F_CARRY   = 1 << 3,
+	F_CARRY    = 1 << 3,
 	// Zero flag
-	F_ZERO    = 1 << 6,
+	F_ZERO     = 1 << 6,
 	// Sign (negative) flag
-	F_NEG     = 1 << 7,
+	F_NEG      = 1 << 7,
 	// Interrupt request level
-	F_IRL     = 0x7 << 8
+	F_IRL      = 0x7 << 8
 } flag_masks;
 
 #endif

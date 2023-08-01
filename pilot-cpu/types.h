@@ -177,6 +177,7 @@ typedef enum
 	DATA_LATCH_IMM_0,
 	DATA_LATCH_IMM_1,
 	DATA_LATCH_IMM_2,
+	DATA_LATCH_IMM_HML,
 	DATA_LATCH_IMM_HML_RM,
 	
 	// Short Form Immediate bits of each RM operand
