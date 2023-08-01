@@ -261,7 +261,7 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 		case 15:
 		{
 			uses_imm = TRUE;
-			operation = (opcode & 0x0700) >> 16;
+			operation = (opcode & 0x0700) >> 8;
 			switch(operation)
 			{
 				case 0: case 1: case 2: case 3:
