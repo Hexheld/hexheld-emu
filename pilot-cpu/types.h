@@ -9,150 +9,201 @@ typedef int_fast8_t bool;
 
 typedef enum
 {
-	REG8_A = 0,
-	REG8_B,
-	REG8_H,
-	REG8_L,
-	REG8_I,
-	REG8_X,
-	REG8_D,
-	REG8_S,
+	REG8_L0 = 0,
+	REG8_L1,
+	REG8_L2,
+	REG8_L3,
+	REG8_M0,
+	REG8_M1,
+	REG8_M2,
+	REG8_M3,
 	
-	REG8_C,
-	REG8_F,
-	REG8_E
+	REG8_W,
+	REG8_F
 } reg8_spec;
 
 typedef enum
 {
-	REG16_AB = 0,
-	REG16_A_SX,
-	REG16_HL,
-	REG16_B_SX,
-	REG16_IX,
-	REG16_A_ZX,
-	REG16_DS,
-	REG16_SP
+	REG16_W0 = 0,
+	REG16_W1,
+	REG16_W2,
+	REG16_W3,
+	REG16_W4,
+	REG16_W5,
+	REG16_W6,
+	REG16_W7,
+	
+	REG16_WF
 } reg16_spec;
 
 typedef enum
 {
+	REG24_P0 = 0,
+	REG24_P1,
+	REG24_P2,
+	REG24_P3,
+	REG24_P4,
+	REG24_P5,
+	REG24_P6,
+	REG24_SP
+} reg24_spec;
+
+typedef enum
+{
+	// RM operands
 	DATA_REG,
+	DATA_IND_REG24_IMM16,
+	DATA_IND_REG24,
 	DATA_IND_IMM16,
 	DATA_IND_IMM24,
-	DATA_IND_REG16,
-	DATA_IND_IX_IMM16,
-	DATA_IND_SP_IMM16,
+	DATA_IND_PGC24_IMM16,
+	DATA_IND_PGC24_IMM24,
+	
+	// register indexed
+	DATA_IND_REG24_REG8,
+	DATA_IND_REG24_REG8_SX,
+	DATA_IND_REG24_REG16,
+	DATA_IND_REG24_REG16_SX,
+	DATA_IND_REG24_REG24,
+	
+	// absolute indexed
+	DATA_IND_IMM24_REG8,
+	DATA_IND_IMM24_REG8_SX,
+	DATA_IND_IMM24_REG16,
+	DATA_IND_IMM24_REG16_SX,
+	DATA_IND_IMM24_REG24,
 } data_location_spec;
 
 typedef enum
 {
-	IND_ZEROPAGE = 0,
-	IND_DS,
-	IND_ONEPAGE
-} indirect_type_spec;
+	SIZE_8_BIT = 0,
+	SIZE_16_BIT,
+	SIZE_24_BIT
+} data_size_spec;
 
 typedef union
 {
 	reg8_spec reg8;
 	reg16_spec reg16;
+	reg24_spec reg24;
 } reg_spec;
 
 typedef uint_fast8_t rm_spec;
-typedef uint_fast8_t zm_spec;
 
 #define RM_NULL -1
 
 typedef enum
 {
+	// no-op
 	MU_NONE = 0,
+	
+	// request memory
 	MU_IND_IMM,
+	MU_IND_IMM0,
+	MU_IND_IMM_RM,
+	MU_IND_IMM_WITH_BITS,
+	
 	MU_IND_REG,
+	MU_IND_REG_POST_AUTO,
 	MU_IND_REG_AUTO,
 	MU_IND_REG_WITH_IMM,
-	MU_IND_WITH_DS,
-	MU_IND_WITH_DS_AUTO,
-	MU_IND_DS_IX_IMM,
-
-	MU_IND_IMM0,
-	MU_IND_REG_WITH_IMM0,
-	MU_IND_DS_IX_IMM0,
+	MU_IND_REG_WITH_BITS,
+	MU_IND_PGC_WITH_IMM,
+	MU_IND_PGC_WITH_IMM_RM,
+	MU_IND_PGC_WITH_HML,
+	MU_IND_PGC_WITH_HML_RM,
 	
-	MU_LD_ZN_IND,
-	MU_LD_ZN_IND__DEREFER_,
-	MU_LD_ZN_IND__MOV_,
-	
-	MU_LD_ZN_AUTO_IND,
-	MU_LD_ZN_AUTO_IND__AUTO_BUFFER_,
-	MU_LD_ZN_AUTO_IND__DEREFER_,
-	MU_LD_ZN_AUTO_IND__MOV_,
-	MU_LD_ZN_AUTO_IND__AUTO_WRITEBACK_,
-
-	MU_LD_ZN_WITH_DS_IND,
-	MU_LD_ZN_WITH_DS_IND__DEREFER_,
-	MU_LD_ZN_WITH_DS_IND__DS_CALC_,
-	
-	MU_LD_ZN_DS_AUTO_IND,
-	MU_LD_ZN_DS_AUTO_IND__AUTO_BUFFER_,
-	MU_LD_ZN_DS_AUTO_IND__DEREFER_,
-	MU_LD_ZN_DS_AUTO_IND__DS_CALC_,
-	MU_LD_ZN_DS_AUTO_IND__MOV_,
-	MU_LD_ZN_DS_AUTO_IND__AUTO_WRITEBACK_,
-
-	MU_LD_ZN_WITH_IX_IND,
-
-	MU_LD_ZN_DS_IX_IND,
-
-	MU_POST_AUTOIDX,
+	// post-increment
+	MU_POST_AUTOIDX
 } mucode_entry_idx;
 
 typedef struct
 {
 	mucode_entry_idx entry_idx;
-	uint_fast8_t reg_select;
-	bool bank_select;
-	bool is_16bit;
+	// bit 3: sign extend
+	// bit 4: RM operand number
+	uint8_t reg_select;
+	data_size_spec size;
 	bool is_write;
 } mucode_entry_spec;
 
 typedef enum
 {
+	// zero, or n/a
 	DATA_ZERO = 0,
-	DATA_REG__A,
-	DATA_REG__B,
-	DATA_REG__H,
-	DATA_REG__L,
-	DATA_REG__I,
-	DATA_REG__X,
-	DATA_REG__D,
-	DATA_REG__S,
-	DATA_REG_S_,
-	DATA_REG_AB,
-	DATA_REG_HL,
-	DATA_REG_IX,
-	DATA_REG_DS,
-	DATA_REG__C,
-	DATA_REG_SP,
-	DATA_REG_PC,
-	DATA_REG__K,
+
+	// the current micro-operation size
+	DATA_SIZE,
+	
+	// 8-bit registers
+	DATA_REG_L0,
+	DATA_REG_L1,
+	DATA_REG_L2,
+	DATA_REG_L3,
+	DATA_REG_M0,
+	DATA_REG_M1,
+	DATA_REG_M2,
+	DATA_REG_M3,
 	DATA_REG__F,
-	DATA_REG_KF,
-	DATA_REG__E,
+	DATA_REG__W,
+	
+	// 16-bit registers
+	DATA_REG_W0,
+	DATA_REG_W1,
+	DATA_REG_W2,
+	DATA_REG_W3,
+	DATA_REG_W4,
+	DATA_REG_W5,
+	DATA_REG_W6,
+	DATA_REG_W7,
+	DATA_REG_WF,
+	
+	// 24-bit registers
+	DATA_REG_P0,
+	DATA_REG_P1,
+	DATA_REG_P2,
+	DATA_REG_P3,
+	DATA_REG_P4,
+	DATA_REG_P5,
+	DATA_REG_P6,
+	DATA_REG_SP,
+	DATA_REG_PGC,
+	
+	// Special registers
+	DATA_LATCH_REPI,
+	DATA_LATCH_REPR,
 	DATA_LATCH_MEM_ADDR,
 	DATA_LATCH_MEM_DATA,
 	DATA_LATCH_IMM_0,
 	DATA_LATCH_IMM_1,
-	DATA_LATCH_IMM_2
+	DATA_LATCH_IMM_2,
+	DATA_LATCH_IMM_HML,
+	DATA_LATCH_IMM_HML_RM,
+	
+	// Short Form Immediate bits of each RM operand
+	DATA_LATCH_SFI_1,
+	DATA_LATCH_SFI_2,
+	
+	// Second RM operand latches
+	DATA_LATCH_RM_1,
+	DATA_LATCH_RM_2,
+	DATA_LATCH_RM_HML,
+
+	// Registers from a 3-bit value
+	DATA_REG_IMM_0_8,
+	DATA_REG_IMM_1_8,
+	DATA_REG_IMM_1_2,
+	DATA_REG_IMM_2_8,
+	DATA_REG_RM_1_8,
+	DATA_REG_RM_1_2,
+	DATA_REG_RM_2_8
 } data_bus_specifier;
 
 typedef struct {
 	data_bus_specifier location;
-	bool is_16bit;
+	data_size_spec size;
 	bool sign_extend;
 } alu_src_control;
-
-#define MEM_LATCH_AT_HALF1_MASK 0x10
-#define MEM_LATCH_AT_HALF2_MASK 0x20
 
 typedef struct
 {
@@ -168,10 +219,10 @@ typedef struct
 		ALU_XOR
 	} operation;
 	
-	// Source transformations
-	bool src2_add1;
+	// Source transformations (in order)
 	bool src2_add_carry;
 	bool src2_negate;
+	bool src2_add1;
 	
 	// Shifter control
 	enum
@@ -187,29 +238,22 @@ typedef struct
 	} shifter_mode;
 	
 	// Flag control
-	uint_fast8_t flag_write_mask;
+	uint8_t flag_write_mask;
 	bool invert_carries;
 	enum
 	{
 		FLAG_C_ALU_CARRY,
 		FLAG_C_SHIFTER_CARRY,
 	} flag_c_mode;
+	
 	bool flag_d;
-	enum
-	{
-		FLAG_A_CARRY,
-		FLAG_A_OVERFLOW,
-	} flag_a_mode;
-	// At the end of this cycle, locks further modification of the A flag until after the current instruction is finished
-	bool set_flag_a_lock;
+	
 	enum
 	{
 		FLAG_V_NORMAL,
 		FLAG_V_SHIFTER_CARRY,
 		FLAG_V_CLEAR,
 	} flag_v_mode;
-	
-	// Register swap control
 	
 	// Memory control
 	/* Latching an address follows the cycle below:
@@ -221,16 +265,12 @@ typedef struct
 	{
 		// Don't latch address
 		MEM_NO_LATCH = 0,
-		// Latches at first half of cycle, address from ALU src0 with bank 0 or 1
-		MEM_LATCH_HALF1_B0 = MEM_LATCH_AT_HALF1_MASK | 0,
-		MEM_LATCH_HALF1_B1 = MEM_LATCH_AT_HALF1_MASK | 1,
-		MEM_LATCH_HALF1_BD = MEM_LATCH_AT_HALF1_MASK | 2,
-		// Latches at second half of cycle, address from ALU dest with bank D, D + ALU.c or 0
-		MEM_LATCH_HALF2_B0 = MEM_LATCH_AT_HALF2_MASK | 0,
-		MEM_LATCH_HALF2_BD = MEM_LATCH_AT_HALF2_MASK | 2,
-		MEM_LATCH_HALF2_BD_ALUC = MEM_LATCH_AT_HALF2_MASK | 3,
-		// Latches at second half of cycle, address and bank are whatever was left in MAR (used for destination writeback)
-		MEM_LATCH_HALF2_MAR = MEM_LATCH_AT_HALF2_MASK | 8,
+		// Latches at first half of cycle, address from ALU src0
+		MEM_LATCH_HALF1,
+		// Latches at second half of cycle, address from ALU dest
+		MEM_LATCH_HALF2,
+		// Latches at second half of cycle, address is whatever was left in MAR (used for destination writeback)
+		MEM_LATCH_HALF2_MAR,
 	} mem_latch_ctl;
 	// If set, suppresses memory access assertion if memory is latched in this cycle
 	bool mem_access_suppress;
@@ -244,7 +284,9 @@ typedef struct
 		// Data is not latched; whatever was left in MDR is what's written back
 		MEM_WRITE_FROM_MDR,
 	} mem_write_ctl;
-	bool mem_16bit;
+
+	// The Pilot has a 24-bit internal data bus, but this is reduced by glue logic to 16 bits for any accesses outside the CPU.
+	bool mem_size;
 } execute_control_word;
 
 typedef struct
@@ -256,11 +298,10 @@ typedef struct
 typedef struct
 {
 	// Immediate data sources
-	uint_fast16_t imm_words[3];
+	uint16_t imm_words[5];
 	
-	// PC and K for this instruction
-	uint16_t inst_pc;
-	uint8_t inst_k;
+	// PGC for this instruction
+	uint32_t inst_pgc;
 	
 	// Sequencer control
 	// override_op: if not MU_NONE, overrides the entire execution with itself
@@ -274,42 +315,40 @@ typedef struct
 
 	// Register post auto-increment control
 	int8_t auto_incr_amount;
-	enum
-	{
-		AUTO_INCR_HL,
-		AUTO_INCR_IX
-	} auto_incr_reg_select;
-
+	
 	// Branch flags
 	bool branch;
 	enum
 	{
+		COND_LE = 0,     // less than or equal
+		COND_GT,         // greater than
 		COND_LT,         // less than
 		COND_GE,         // greater than or equal
-		COND_LE,         // less than or equal
-		COND_GT,         // greater than
 		COND_U_LE,       // unsigned less than or equal
 		COND_U_GT,       // unsigned greater than
-		COND_Z,          // equal; zero
-		COND_NZ,         // not equal; nonzero
-		COND_S,          // negative; sign set
-		COND_NS,         // positive; sign clear
-		COND_V,          // overflow; parity even
-		COND_NV,         // not overflow; parity odd
 		COND_C,          // carry set; unsigned less than
 		COND_NC,         // carry clear; unsigned greater than or equal
+		COND_M,          // minus; sign set
+		COND_P,          // plus; sign clear
+		COND_V,          // overflow; parity even
+		COND_NV,         // not overflow; parity odd
+		COND_Z,          // equal; zero
+		COND_NZ,         // not equal; nonzero
 		COND_ALWAYS,     // always
 		COND_ALWAYS_CALL // always, but used for calls
 	} branch_cond;
+	
 	enum
 	{
-		BR_RELATIVE,
-		BR_LOCAL,
-		BR_D,
-		BR_FAR,
+		BR_RELATIVE_SHORT,
+		BR_RELATIVE_LONG,
+		BR_LONG,
 		BR_RET,
-		BR_RET_FAR
+		BR_RET_LONG
 	} branch_dest_type;
+	
+	// Offset of the second RM operand
+	uint8_t rm2_offset;
 } inst_decoded_flags;
 
 #endif

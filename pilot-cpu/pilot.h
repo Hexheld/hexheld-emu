@@ -10,9 +10,7 @@ typedef enum
 {
 	MCTL_READY = 0,
 	MCTL_MEM_R_BUSY,
-	MCTL_IO_R_BUSY,
 	MCTL_MEM_W_BUSY,
-	MCTL_IO_W_BUSY,
 	MCTL_DATA_LATCHED
 } Pilot_memctl_state;
 
@@ -31,7 +29,7 @@ typedef struct
 	Pilot_cpu_regs core;
 	Pilot_memctl memctl;
 	pilot_interconnect interconnects;
-	uint8_t ram[0x7fff];
+	uint8_t hram[0xc00];
 } Pilot_system;
 
 #endif

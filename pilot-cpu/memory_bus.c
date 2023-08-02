@@ -1,21 +1,16 @@
 #include "memory.h"
 #include <stddef.h>
 
-#define WRAM_START 0x0000
-#define WRAM_END   0x7fff
-#define VRAM_START 0x8000
-#define VRAM_END   0xffff
-
-#define CART_CSMOD_START   0x010000
-#define CART_CSMOD_END     0x01ffff
-#define CART_ROMONLY_START 0x020000
-#define CART_ROMONLY_END   0xffffff
-
-bool
-io_read (Pilot_system *sys)
-{
-	return TRUE;
-}
+#define WRAM_END         0x007fff
+#define VRAM_END         0x00ffff
+#define CART_CS1_END     0x0fffff
+#define CART_CS2_END     0x1fffff
+#define CART_ROM_END     0xffdfff
+#define TMRAM_END        0xffefff
+#define OAM_END          0xfff27f
+#define HCIO_START       0xfff300
+#define HCIO_END         0xfff3ff
+#define HRAM_END         0xffffff
 
 bool
 mem_read (Pilot_system *sys)
@@ -23,22 +18,38 @@ mem_read (Pilot_system *sys)
 	uint32_t addr = sys->memctl.addr_reg;
 	if (addr <= WRAM_END)
 	{
-		addr &= 0x7FFE;
-		sys->memctl.data_reg_in = (uint16_t)sys->ram[addr] + ((uint16_t)sys->ram[addr + 1] << 8);
-		return TRUE;
+		// try to read WRAM
 	}
 	else if (addr <= VRAM_END)
 	{
 		// try to read VRAM
 	}
-	else if (addr <= CART_CSMOD_END)
+	else if (addr <= CART_CS2_END)
 	{
 		// call cartridge chip select mapper
 	}
-	else
+	else if (addr <= CART_ROM_END)
 	{
 		// call cartridge mapper
 	}
+	else if (addr <= TMRAM_END)
+	{
+		// tilemap RAM
+	}
+	else if (addr <= OAM_END)
+	{
+		// sprite attribute RAM
+	}
+	else if (HCIO_START <= addr && addr <= HCIO_END)
+	{
+		// memory mapped I/O
+	}
+	else if (addr <= HRAM_END)
+	{
+		sys->memctl.data_reg_in = sys->hram[addr] | (sys->hram[addr + 1] << 8);
+		return TRUE;
+	}
+	
 	return FALSE;
 }
 
@@ -55,13 +66,11 @@ mem_read (Pilot_system *sys)
  * 
  */
 Pilot_memctl_state
-Pilot_mem_addr_read_assert (Pilot_system *sys, uint8_t bank, uint16_t addr)
+Pilot_mem_addr_read_assert (Pilot_system *sys, uint32_t addr)
 {
 	if (sys->memctl.state == MCTL_READY)
 	{
-		uint32_t actual_address = ((uint32_t)bank << 16) + addr;
-		
-		sys->memctl.addr_reg = actual_address;
+		sys->memctl.addr_reg = addr;
 		sys->memctl.state = MCTL_MEM_R_BUSY;
 		return MCTL_READY;
 	}
@@ -70,13 +79,11 @@ Pilot_mem_addr_read_assert (Pilot_system *sys, uint8_t bank, uint16_t addr)
 }
 
 Pilot_memctl_state
-Pilot_mem_addr_write_assert (Pilot_system *sys, uint8_t bank, uint16_t addr, uint16_t data)
+Pilot_mem_addr_write_assert (Pilot_system *sys, uint32_t addr, uint16_t data)
 {
 	if (sys->memctl.state == MCTL_READY)
 	{
-		uint32_t actual_address = ((uint32_t)bank << 16) + addr;
-		
-		sys->memctl.addr_reg = actual_address;
+		sys->memctl.addr_reg = addr;
 		sys->memctl.data_reg_out = data;
 		sys->memctl.state = MCTL_MEM_W_BUSY;
 		return MCTL_READY;
@@ -100,24 +107,10 @@ void
 Pilot_memctl_tick (Pilot_system *sys)
 {
 	sys->memctl.data_valid = FALSE;
-	switch (sys->memctl.state)
+	if (sys->memctl.state == MCTL_MEM_R_BUSY && mem_read(sys))
 	{
-		case MCTL_MEM_R_BUSY:
-			if (mem_read(sys))
-			{
-				sys->memctl.state = MCTL_READY;
-				sys->memctl.data_valid = TRUE;
-			}
-			break;
-		case MCTL_IO_R_BUSY:
-			if (io_read(sys))
-			{
-				sys->memctl.state = MCTL_READY;
-				sys->memctl.data_valid = TRUE;
-			}
-			break;
-		default:
-			break;
+		sys->memctl.state = MCTL_READY;
+		sys->memctl.data_valid = TRUE;
 	}
 }
 
