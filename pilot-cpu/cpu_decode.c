@@ -89,7 +89,7 @@ void decode_not_implemented_ ();
 void decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool src_is_left, data_size_spec size);
 
 static inline void
-decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
+decode_inst_branch_ (pilot_decode_state *state, uint16_t opcode)
 {
 	if ((opcode & 0xff00) == 0xff00)
 	{
@@ -119,7 +119,7 @@ decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
 		}
 		else
 		{
-			decode_invalid_opcode_(state);
+			decode_invalid_opcode_(state->sys);
 			return;
 		}
 	}
@@ -160,19 +160,19 @@ decode_inst_branch_ (pilot_decode_state *state, uint_fast16_t opcode)
 		}
 	}
 	
-	decode_invalid_opcode_(state);
+	decode_invalid_opcode_(state->sys);
 	return;
 }
 
 static void
-decode_inst_bit_ (pilot_decode_state *state, uint_fast16_t opcode)
+decode_inst_bit_ (pilot_decode_state *state, uint16_t opcode)
 {
 	decode_not_implemented_();
 	return;
 }
 
 static void
-decode_inst_ld_other_ (pilot_decode_state *state, uint_fast16_t opcode)
+decode_inst_ld_other_ (pilot_decode_state *state, uint16_t opcode)
 {
 	execute_control_word *core_op = &state->work_regs.core_op;
 	core_op->src2_add1 = FALSE;
@@ -208,9 +208,9 @@ decode_inst_ld_other_ (pilot_decode_state *state, uint_fast16_t opcode)
 }
 
 static inline void
-decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
+decode_inst_arithlogic_ (pilot_decode_state *state, uint16_t opcode)
 {
-	uint_fast8_t operation = ((opcode & 0x00c0) >> 6) | ((opcode & 0x1800) >> 9);
+	uint8_t operation = ((opcode & 0x00c0) >> 6) | ((opcode & 0x1800) >> 9);
 	data_size_spec size = ((opcode & 0xc000) >> 14);
 	execute_control_word *core_op = &state->work_regs.core_op;
 	
@@ -226,8 +226,8 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 		case 0: case 1: case 2: case 3: case 8: case 9: case 10: case 11:
 			// ADD, ADX, SUB, SBX
 			core_op->operation = ALU_ADD;
-			core_op->src2_add_carry = operation & 1;
-			core_op->src2_negate = operation & 2;
+			core_op->src2_add_carry = (operation & 1) != 0;
+			core_op->src2_negate = (operation & 2) != 0;
 			core_op->flag_write_mask = F_NEG | F_ZERO | F_OVERFLOW | F_CARRY | F_EXTEND;
 			break;
 		case 4: case 12:
@@ -340,7 +340,7 @@ decode_inst_arithlogic_ (pilot_decode_state *state, uint_fast16_t opcode)
 }
 
 static void
-decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
+decode_inst_ld_group_ (pilot_decode_state *state, uint16_t opcode)
 {
 	execute_control_word *core_op = &state->work_regs.core_op;
 	data_size_spec size = ((opcode & 0xc000) >> 14);
@@ -400,7 +400,7 @@ decode_inst_ld_group_ (pilot_decode_state *state, uint_fast16_t opcode)
 }
 
 static void
-decode_inst_other_ (pilot_decode_state *state, uint_fast16_t opcode)
+decode_inst_other_ (pilot_decode_state *state, uint16_t opcode)
 {
 	decode_not_implemented_();
 	return;
@@ -410,7 +410,7 @@ static void
 decode_inst_ (pilot_decode_state *state)
 {
 	state->rm_ops = 0;
-	uint_fast16_t opcode = state->work_regs.imm_words[0];
+	uint16_t opcode = state->work_regs.imm_words[0];
 	
 	if ((opcode & 0xf000) >= 0xe000)
 	{

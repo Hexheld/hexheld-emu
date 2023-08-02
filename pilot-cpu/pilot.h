@@ -19,7 +19,7 @@ typedef struct
 	Pilot_memctl_state state;
 	bool data_valid;
 	size_t wait_cycles_left;
-	uint_fast32_t addr_reg;
+	uint32_t addr_reg;
 	uint16_t data_reg_in;
 	uint16_t data_reg_out;
 } Pilot_memctl;

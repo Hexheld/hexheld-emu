@@ -13,12 +13,12 @@ typedef struct {
 	execute_control_word mucode_decoded_buffer;
 	execute_control_word *control;
 	
-	uint_fast32_t alu_input_latches[2];
-	uint_fast32_t alu_output_latch;
+	uint32_t alu_input_latches[2];
+	uint32_t alu_output_latch;
 	bool alu_shifter_carry_bit;
 	
 	// Memory address and data registers for requesting memory accesses
-	uint_fast32_t mem_addr;
+	uint32_t mem_addr;
 	uint16_t mem_data;
 	
 	// When reading memory, this flag will be high until the memory access has been completed.
@@ -62,7 +62,7 @@ void execute_unreachable_ ();
 #define ACCESS_REG_BITS_(state, r, size) fetch_data_(state, (size == SIZE_8_BIT ? DATA_REG_L0 : DATA_REG_P0) + r)
 #define READ_IMM_LATCH_(state, imm, size) (size == SIZE_24_BIT ? (((state->decoded_inst.imm_words[imm] & 0xff) << 16) | state->decoded_inst.imm_words[imm + 1]) : state->decoded_inst.imm_words[imm])
 
-static uint_fast32_t
+static uint32_t
 fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 {
 	switch (src)
@@ -177,7 +177,7 @@ fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 		{
 			if (state->decoded_inst.imm_words[2] >= 0xc000) 
 			{
-				decode_invalid_opcode_(decode_state_);
+				decode_invalid_opcode_(state->sys);
 				return 0;
 			}
 			state->mucode_decoded_buffer.srcs[1].sign_extend = ((state->decoded_inst.imm_words[2] & 0x0800) != 0);
@@ -191,7 +191,7 @@ fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 		{
 			if (state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] >= 0xc000) 
 			{
-				decode_invalid_opcode_(decode_state_);
+				decode_invalid_opcode_(state->sys);
 				return 0;
 			}
 			state->mucode_decoded_buffer.srcs[1].sign_extend = ((state->decoded_inst.imm_words[state->decoded_inst.rm2_offset + 1] & 0x0800) != 0);
@@ -203,7 +203,7 @@ fetch_data_ (pilot_execute_state *state, data_bus_specifier src)
 }
 
 static void
-write_data_ (pilot_execute_state *state, data_bus_specifier dest, uint_fast32_t *src)
+write_data_ (pilot_execute_state *state, data_bus_specifier dest, uint32_t *src)
 {
 	switch (dest)
 	{
@@ -533,7 +533,7 @@ alu_operate_shifter_ (pilot_execute_state *state, uint16_t operand)
 }
 
 static inline uint8_t
-alu_modify_flags_ (pilot_execute_state *state, uint8_t flags, uint_fast32_t operands[2], uint_fast32_t result, uint_fast32_t carries)
+alu_modify_flags_ (pilot_execute_state *state, uint8_t flags, uint32_t operands[2], uint32_t result, uint32_t carries)
 {
 	bool alu_carry;
 	bool alu_overflow;
@@ -541,7 +541,7 @@ alu_modify_flags_ (pilot_execute_state *state, uint8_t flags, uint_fast32_t oper
 	bool alu_neg;
 	uint8_t flag_source_word = 0;
 	
-	uint_fast32_t alu_parity = result;
+	uint32_t alu_parity = result;
 	alu_parity = alu_parity ^ alu_parity >> 4;
 	alu_parity = alu_parity ^ alu_parity >> 2;
 	alu_parity = alu_parity ^ alu_parity >> 1;
@@ -613,8 +613,8 @@ static void
 execute_half2_result_latch_ (pilot_execute_state *state)
 {
 	int i;
-	uint_fast32_t operands[2];
-	uint_fast32_t carries;
+	uint32_t operands[2];
+	uint32_t carries;
 	
 	alu_src_control *src2 = &state->control->srcs[1];
 	uint8_t flags = fetch_data_(state, DATA_REG__F);
@@ -628,7 +628,7 @@ execute_half2_result_latch_ (pilot_execute_state *state)
 			operands[i] &= 0xff;
 			if (src->sign_extend && (operands[i] & 0x80))
 			{
-				operands[i] |= 0xffff00;
+				operands[i] |= 0xffffff00;
 			}
 		}
 		else if (src->size == SIZE_16_BIT)
@@ -636,8 +636,12 @@ execute_half2_result_latch_ (pilot_execute_state *state)
 			operands[i] &= 0xffff;
 			if (src->sign_extend && (operands[i] & 0x8000))
 			{
-				operands[i] |= 0xff0000;
+				operands[i] |= 0xffff0000;
 			}
+		}
+		else
+		{
+			operands[i] &= 0xffffff;
 		}
 	}
 	
@@ -660,6 +664,10 @@ execute_half2_result_latch_ (pilot_execute_state *state)
 		else if (src2->size == SIZE_16_BIT && !src2->sign_extend)
 		{
 			operands[1] &= 0xffff;
+		}
+		else if (!src2->sign_extend)
+		{
+			operands[1] &= 0xffffff;
 		}
 	}
 	

@@ -7,8 +7,8 @@
 
 void Pilot_memctl_tick (Pilot_system *sys);
 
-Pilot_memctl_state Pilot_mem_addr_read_assert (Pilot_system *sys, uint_fast32_t addr);
-Pilot_memctl_state Pilot_mem_addr_write_assert (Pilot_system *sys, uint_fast32_t addr, uint16_t data);
+Pilot_memctl_state Pilot_mem_addr_read_assert (Pilot_system *sys, uint32_t addr);
+Pilot_memctl_state Pilot_mem_addr_write_assert (Pilot_system *sys, uint32_t addr, uint16_t data);
 bool Pilot_mem_data_wait (Pilot_system *sys);
 uint16_t Pilot_mem_get_data (Pilot_system *sys);
 

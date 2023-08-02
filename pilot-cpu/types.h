@@ -122,7 +122,7 @@ typedef struct
 	mucode_entry_idx entry_idx;
 	// bit 3: sign extend
 	// bit 4: RM operand number
-	uint_fast8_t reg_select;
+	uint8_t reg_select;
 	data_size_spec size;
 	bool is_write;
 } mucode_entry_spec;
@@ -238,7 +238,7 @@ typedef struct
 	} shifter_mode;
 	
 	// Flag control
-	uint_fast8_t flag_write_mask;
+	uint8_t flag_write_mask;
 	bool invert_carries;
 	enum
 	{
@@ -298,10 +298,10 @@ typedef struct
 typedef struct
 {
 	// Immediate data sources
-	uint_fast16_t imm_words[5];
+	uint16_t imm_words[5];
 	
 	// PGC for this instruction
-	uint_fast32_t inst_pgc;
+	uint32_t inst_pgc;
 	
 	// Sequencer control
 	// override_op: if not MU_NONE, overrides the entire execution with itself

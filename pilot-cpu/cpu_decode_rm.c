@@ -1,7 +1,5 @@
 #include "cpu_decode.h"
 
-typedef bool (*rm_decode_func_t) (pilot_decode_state *, bool);
-
 static inline bool
 rm_requires_mem_fetch_ (rm_spec rm)
 {
@@ -83,7 +81,7 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool s
 	else if ((rm & 0x3b) == 0x39)
 	{
 		// Extra word needed
-		decode_queue_read_word_(state);
+		decode_try_read_word_(state);
 		
 		if (!(rm & 0x4))
 		{
@@ -94,7 +92,7 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool s
 		else
 		{
 			// Absolute indexed
-			decode_queue_read_word_(state);
+			decode_try_read_word_(state);
 			run_mucode->entry_idx = MU_IND_IMM_WITH_BITS;
 			run_mucode->reg_select = 0;
 		}
@@ -102,7 +100,7 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool s
 	else if ((rm & 0x3b) == 0x31)
 	{
 		// PGC relative
-		decode_queue_read_word_(state);
+		decode_try_read_word_(state);
 		run_mucode->entry_idx = MU_IND_PGC_WITH_IMM_RM;
 		run_mucode->reg_select = 0;
 		if (!(rm & 0x04))
@@ -113,7 +111,7 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool s
 		else
 		{
 			// unsigned 24-bit
-			decode_queue_read_word_(state);
+			decode_try_read_word_(state);
 		}
 	}
 	else if ((rm & 0x3b) == 0x29)
@@ -150,7 +148,7 @@ decode_rm_specifier (pilot_decode_state *state, rm_spec rm, bool is_dest, bool s
 	else if (src_affected && ((rm & 0x23) == 0x00))
 	{
 		// Register direct
-		uint_fast8_t reg = (rm >> 2) & 0x7;
+		uint8_t reg = (rm >> 2) & 0x7;
 		src_affected->location = (size == SIZE_8_BIT) ? DATA_REG_L0 + reg : DATA_REG_P0 + reg;
 	}
 	

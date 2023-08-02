@@ -23,7 +23,7 @@ typedef struct {
 	} decoding_phase;
 	
 	// Number of RM operands in current instruction
-	uint_fast8_t rm_ops;
+	uint8_t rm_ops;
 } pilot_decode_state;
 
 extern pilot_decode_state *decode_state_;
@@ -31,7 +31,7 @@ extern pilot_decode_state *decode_state_;
 void decode_unreachable_ ();
 
 // Runs the invalid opcode exception reporting.
-void decode_invalid_opcode_ (pilot_decode_state *state);
+void decode_invalid_opcode_ (Pilot_system *sys);
 
 // Queues in a word read from the fetch unit
 void decode_queue_read_word_ (pilot_decode_state *state);
