@@ -567,7 +567,7 @@ alu_modify_flags_ (pilot_execute_state *state, uint8_t flags, uint32_t operands[
 		alu_neg = (result & 0x800000) != 0;
 		alu_overflow = ((operands[1] ^ result) & (operands[0] ^ result) & 0x800000) != 0;
 		alu_zero = (result) == 0;
-		alu_parity ^= (alu_parity >> 16);
+		alu_parity ^= (alu_parity >> 8) ^ (alu_parity >> 16);
 	}
 	alu_carry ^= state->control->invert_carries;
 	
