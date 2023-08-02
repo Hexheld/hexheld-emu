@@ -679,7 +679,7 @@ execute_half2_result_latch_ (pilot_execute_state *state)
 		case ALU_OFF:
 			break;
 		case ALU_ADD:
-			state->alu_output_latch = operands[0] + operands[1];
+			state->alu_output_latch = (operands[0] + operands[1]) & 0xffffff;
 			carries = operands[0] ^ operands[1] ^ state->alu_output_latch;
 			break;
 		case ALU_AND:
